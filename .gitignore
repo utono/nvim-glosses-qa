@@ -1,0 +1,11 @@
+# Local settings (may contain user-specific paths)
+.claude/settings.local.json
+
+# Editor files
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
