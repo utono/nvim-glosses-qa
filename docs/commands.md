@@ -10,19 +10,16 @@ Claude Q&A terminal (opened with `<M-c>` from nvim-glosses).
 | Command | Description |
 |---------|-------------|
 | `/add <terms>` | Add Elizabethan terms (with approval) |
-| `/remove <terms>` | Remove terms from database |
+| `/db` | Display all available database context |
+| `/line-by-line [full]` | Line-by-line close reading for actor rehearsal |
+| `/lines <range>` | Analyze specific lines (e.g., `1-5`, `3,7,12`) |
 | `/lookup <word>` | Search database for a word |
-| `/context` | Show all database context |
-| `/reset` | Restore context after `/clear` |
-| `/summarize` | Generate conversation summary |
+| `/new` | Clear history and show context summary |
+| `/remove <terms>` | Remove terms from database |
 | `/save` | Save last reply to database |
-
-### Prompt Patterns
-
-| Pattern | Description |
-|---------|-------------|
-| `explain <phrase>` | Close reading with line-by-line analysis |
-| `discuss <word>` | Scholarly analysis across Shakespeare's works |
+| `/summarize` | Generate conversation summary |
+| `/term [word]` | List all terms, or get record for specific term |
+| `/discuss <word>` | Scholarly analysis across Shakespeare's works |
 
 ---
 
@@ -93,7 +90,7 @@ Search the database for context about a word or phrase.
 
 ---
 
-### /context
+### /db
 
 Display all available database context for the current passage.
 
@@ -107,17 +104,19 @@ Display all available database context for the current passage.
 
 ---
 
-### /reset
+### /new
 
-Re-initialize session context after using `/clear`.
+Clear conversation history and provide a summary of the loaded context.
 
-**Use when:** You've run `/clear` to reset conversation history and want to
-restore database context.
+**Use when:** Starting fresh or after a long conversation to reset history while
+keeping context awareness.
 
-**Restores:**
-- Current passage and user's translation
-- Prior discussions about this passage
-- Related gloss counts
+**Provides summary of:**
+- The passage (play, act, scene, what it's about)
+- Your translation
+- Catalogued terms that appear in this passage
+- Prior discussions count
+- Related glosses count
 
 ---
 
@@ -137,6 +136,82 @@ Generate a concise summary (2-4 paragraphs) of the conversation.
 
 ---
 
+### /line-by-line [full]
+
+Perform a line-by-line close reading of the passage for actor rehearsal.
+
+**Purpose:** Help actors understand, embody, and speak each line of the original
+text through detailed analysis.
+
+**Usage:**
+```
+/line-by-line        # Default: pauses every 4-6 lines
+/line-by-line full   # Complete entire passage without pausing
+```
+
+**For each line, provides:**
+1. **The line** - quoted in bold
+2. **Meaning** - what the line literally says (1-2 sentences)
+3. **Operative word(s)** - which words must "land" for meaning to arrive
+4. **Breath/thought** - where thought continues vs. completes; where to breathe
+5. **Acting note** - one practical performance insight
+
+**Example output:**
+```
+LINE 1: **"What infinite heart's ease must kings neglect"**
+
+Meaning: What limitless peace of mind kings must give up.
+
+Operative: "neglect" — not "lose" but actively ignore, sacrifice.
+
+Breath: Thought continues to line 2; no breath after "neglect".
+
+Acting: The question is bitter, not curious. Henry already knows
+the answer. Weight on "infinite" — the loss is measureless.
+```
+
+**Practitioner vocabulary used:**
+- "Operative word" (Barton) — the word that carries the argument
+- "Thought-through-line" (Berry) — sustaining intention across complexity
+- "Landing" (Hall) — making a word arrive for the audience
+- "Second circle" (Rodenburg) — present, connected energy
+
+**Performance challenges flagged:**
+- Enjambment (thought runs over line end)
+- Caesura (mid-line pause)
+- Antithesis (balanced oppositions)
+- Periodic structure (meaning delayed to line end)
+- Inverted syntax (verb before subject)
+
+**For long passages (>15 lines):** Breaks into sections and pauses between them
+to check in with the actor (default mode) or uses section headers but continues
+through to end (full mode).
+
+---
+
+### /lines <range>
+
+Analyze specific lines from the passage.
+
+**Purpose:** Focus on particular lines without analyzing the entire passage.
+
+**Usage:**
+```
+/lines 1-5           # Lines 1 through 5
+/lines 3,7,12        # Lines 3, 7, and 12
+/lines 1-3,8,10-12   # Mixed ranges and individual lines
+```
+
+**Line counting:** Counts dialogue lines from the original text starting at 1.
+Skips blank lines and character names when counting.
+
+**Behavior:** Completes all requested lines without pausing.
+
+**Same analysis structure as `/line-by-line`:** meaning, operative words,
+breath/thought, and acting note for each line.
+
+---
+
 ### /save
 
 Save the most recent Claude reply to the database.
@@ -152,55 +227,37 @@ Save the most recent Claude reply to the database.
 
 ---
 
-## Prompt Patterns
+### /term [word]
 
-These are not slash commands - just type them directly.
-
-### explain <phrase>
-
-Close reading with line-by-line analysis of a specific phrase or passage.
+Retrieve Elizabethan term records from the database.
 
 **Usage:**
 ```
-explain twin-born with greatness
-explain the quality of mercy
+/term              # List all catalogued terms by category
+/term ceremony     # Get full record for specific term
 ```
 
-**Structure:**
-1. Opening statement placing the phrase in dramatic context
-2. Line-by-line analysis with **bold** quoted phrases
-3. Synthesis paragraph connecting parts into thematic whole
+**Without argument:** Lists all approved terms grouped by category with totals.
 
-**Example output:**
-```
-This is Henry's bitter complaint about kingship's paradox:
+**With argument:** Shows the full record including:
+- Category
+- Significance (explanation of Elizabethan resonance)
+- Examples (if recorded)
+- Date added and who proposed it
 
-**"O hard condition / Twin-born with greatness"** The "hard
-condition" (burden) is born as a twin alongside greatness — you
-cannot have royal power without this weight. They arrive together
-at birth, inseparable.
-
-**"subject to the breath / Of every fool"** Despite being king,
-Henry is "subject to" — subordinate to, at the mercy of —
-what every fool says ("breath" = speech, opinion). The irony
-stings: the ruler is ruled by public opinion.
-
-The compression is masterful: Henry must bear responsibility for
-everyone, yet endure criticism from people who can only think
-about themselves.
-```
+**If term not found:** Suggests `/add <term>` or `/lookup <term>`.
 
 ---
 
-### discuss <word>
+### /discuss <word>
 
 Scholarly analysis of how Shakespeare uses a word across his complete works.
 
 **Usage:**
 ```
-discuss ceremony
-discuss the quality of mercy
-discuss nothing
+/discuss ceremony
+/discuss nothing
+/discuss quality of mercy
 ```
 
 **Structure:**
