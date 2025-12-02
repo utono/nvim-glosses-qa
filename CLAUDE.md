@@ -387,6 +387,7 @@ Don't overload every response; flag 1-2 significant terms maximum.
 | `/term [word]` | List all terms, or get record for specific term |
 | `/lookup <word>` | Search database broadly (glosses, terms, addenda) |
 | `/db` | Show all available context from database |
+| `/line-by-line` | Line-by-line close reading for actor rehearsal |
 
 ## After /new or /clear
 
