@@ -14,4 +14,4 @@ Structure:
 
 Output ONLY the summary text, no preamble or meta-commentary.
 
-After the summary, remind the user: "Type /save to save this summary to the gloss database."
+After the summary, remind the user: "Type /save to save this to the gloss database (or /save after any reply you want to keep)."

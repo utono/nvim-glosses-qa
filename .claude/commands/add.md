@@ -4,7 +4,7 @@ The user has provided terms to add: $ARGUMENTS
 
 If no arguments provided, remind the user:
 ```
-Usage: /add term1 term2 "multi word phrase" 'another phrase'
+Usage: /add term1 term2 "multi word phrase"
 Example: /add nothing will "star-crossed"
 ```
 
@@ -12,34 +12,47 @@ For each term provided:
 
 1. **Check if it already exists:**
 ```bash
-sqlite3 ~/utono/literature/gloss.db "SELECT term, category, significance FROM elizabethan_terms WHERE term = '<term>'"
+sqlite3 ~/utono/literature/gloss.db \
+  "SELECT term, category, significance FROM elizabethan_terms
+   WHERE term = '<term>'"
 ```
 
-2. **Determine an appropriate category** from:
-   - Philosophical and Scientific Terms
-   - Social and Political Terms
-   - Theatre and Performance
-   - Words of Extremity and Paradox
-   - Words of Identity and Desire
-   - (or suggest a new category if none fit)
+If it exists, report: "Term '<term>' already exists." and skip to next term.
 
-3. **Write a brief significance** explaining why this word/phrase carried special resonance for Elizabethan audiences
-
-Format your response as database entries:
+2. **Propose the addition** with category and significance:
 
 ```
-ADDING TERM: <term>
-CATEGORY: <category>
+PROPOSED TERM: <term>
+CATEGORY: <one of the categories below>
 SIGNIFICANCE: <1-2 sentence explanation>
+
+[a]pprove  [r]evise
 ```
 
-Repeat for each term.
+Categories:
+- Philosophical and Scientific Terms
+- Social and Political Terms
+- Theatre and Performance
+- Words of Extremity and Paradox
+- Words of Identity and Desire
 
-After formatting all terms, run the insert commands:
-```bash
-sqlite3 ~/utono/literature/gloss.db "INSERT OR IGNORE INTO elizabethan_terms (term, category, significance, proposed_by, approved) VALUES ('<term>', '<category>', '<significance>', 'claude', 1);"
-```
+3. **Wait for user response:**
 
-Confirm each addition: "Added '<term>' to Elizabethan terms database."
+- **a or approve**: Insert the term and update the cache:
+  ```bash
+  sqlite3 ~/utono/literature/gloss.db \
+    "INSERT INTO elizabethan_terms (term, category, significance, proposed_by)
+     VALUES ('<term>', '<category>', '<significance>', 'claude');"
+  ```
+  Then refresh the terms cache:
+  ```bash
+  sqlite3 ~/utono/literature/gloss.db \
+    "SELECT term FROM elizabethan_terms WHERE approved = 1 ORDER BY term" \
+    > ~/.config/nvim-glosses-qa/terms-cache.txt
+  ```
+  Confirm: "Added '<term>' to database."
 
-If a term already exists, report: "Term '<term>' already exists in database."
+- **r or revise**: Ask what to change (category, significance, or both),
+  then re-propose with changes.
+
+Process terms one at a time, waiting for approval before moving to the next.

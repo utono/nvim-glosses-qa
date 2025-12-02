@@ -20,6 +20,13 @@ sqlite3 ~/utono/literature/gloss.db "SELECT term, category, significance FROM el
 sqlite3 ~/utono/literature/gloss.db "DELETE FROM elizabethan_terms WHERE term = '<term>'; SELECT changes();"
 ```
 
+3. **After all removals, refresh the terms cache:**
+```bash
+sqlite3 ~/utono/literature/gloss.db \
+  "SELECT term FROM elizabethan_terms WHERE approved = 1 ORDER BY term" \
+  > ~/.config/nvim-glosses-qa/terms-cache.txt
+```
+
 Format your response:
 
 ```
