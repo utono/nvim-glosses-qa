@@ -1,6 +1,12 @@
 # Local settings (may contain user-specific paths)
 .claude/settings.local.json
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
 # Editor files
 *.swp
 *.swo

@@ -510,7 +510,10 @@ class SceneAnalyzer:
         # Build prompt and generate
         prompt_builder = PromptBuilder(speech.text)
         prompt = prompt_builder.build_line_by_line_prompt()
-        analysis = self.backend.generate(prompt)
+        raw_analysis = self.backend.generate(prompt)
+
+        # Prepend speaker name (uppercase with period) before analysis
+        analysis = f"{speech.speaker.upper()}.\n\n{raw_analysis}"
 
         # Save to database
         metadata = self._get_metadata(speech)
@@ -553,7 +556,11 @@ class SceneAnalyzer:
         # Build prompt and generate
         prompt_builder = PromptBuilder(chunk.text)
         prompt = prompt_builder.build_line_by_line_prompt()
-        analysis = self.backend.generate(prompt)
+        raw_analysis = self.backend.generate(prompt)
+
+        # Prepend speaker name(s) (uppercase with period) before analysis
+        speakers = "\n".join(f"{s.speaker.upper()}." for s in chunk.speeches)
+        analysis = f"{speakers}\n\n{raw_analysis}"
 
         # Save to database using first speech's metadata
         first_speech = chunk.speeches[0]
