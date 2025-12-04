@@ -577,6 +577,20 @@ class SceneAnalyzer:
 
         return analysis
 
+    def _clean_analysis(self, analysis: str) -> str:
+        """Remove trailing separators from analysis text.
+
+        Args:
+            analysis: Raw analysis text from Claude.
+
+        Returns:
+            Cleaned analysis without trailing '---' separators.
+        """
+        cleaned = analysis.rstrip()
+        while cleaned.endswith('---'):
+            cleaned = cleaned[:-3].rstrip()
+        return cleaned
+
     def _format_scene_document(self, chunks: list[SpeechChunk],
                                 analyses: list[str],
                                 scene_header: str) -> str:
@@ -618,7 +632,7 @@ class SceneAnalyzer:
                 lines.append("")
                 lines.append("#### Line-by-Line Analysis")
                 lines.append("")
-                lines.append(analysis)
+                lines.append(self._clean_analysis(analysis))
                 lines.append("")
                 lines.append("---")
                 lines.append("")
@@ -640,7 +654,7 @@ class SceneAnalyzer:
                 lines.append("")
                 lines.append("#### Line-by-Line Analysis")
                 lines.append("")
-                lines.append(analysis)
+                lines.append(self._clean_analysis(analysis))
                 lines.append("")
                 lines.append("---")
                 lines.append("")
