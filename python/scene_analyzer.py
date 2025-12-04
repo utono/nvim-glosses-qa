@@ -417,6 +417,7 @@ class SceneAnalyzer:
         self.output_dir = output_dir or GLOSSES_DIR
         self.merge_threshold = merge_threshold
         self.db = GlossDatabase()
+        self.db.setup()  # Ensure tables exist
 
         # Parse play
         self.parser = PlayParser(play_file)
@@ -514,8 +515,6 @@ class SceneAnalyzer:
         # Save to database
         metadata = self._get_metadata(speech)
 
-        # Ensure passage exists
-        self.db.setup()
         passage_id = self.db.get_or_create_passage(
             speech.hash, speech.text, metadata
         )
@@ -561,8 +560,6 @@ class SceneAnalyzer:
         metadata = self._get_metadata(first_speech)
         metadata['character'] = chunk.speaker_summary
 
-        # Ensure passage exists
-        self.db.setup()
         self.db.get_or_create_passage(chunk.hash, chunk.text, metadata)
 
         # Save as gloss type 'line-by-line'
