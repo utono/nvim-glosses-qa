@@ -344,6 +344,7 @@ class SceneAnalyzer:
             'character': speech.speaker,
             'act': str(self.act),
             'scene': str(self.scene),
+            'play_name': self.play_name,
         }
 
     def _analyze_speech(self, speech: Speech) -> str:
