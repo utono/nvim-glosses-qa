@@ -31,8 +31,8 @@ Where `<act_scene>` can be:
 ## Options
 
 - `--merge N` or `-m N`: Merge consecutive speeches until reaching N lines.
-  Reduces API calls significantly (e.g., 53 speeches → 10 chunks with -m 15)
-- `--dry-run` or `-n`: Show what would be processed without calling API
+  Reduces calls significantly (e.g., 53 speeches → 10 chunks with -m 15)
+- `--dry-run` or `-n`: Show what would be processed without calling Claude Code
 
 ## Output
 
@@ -103,5 +103,5 @@ User: `/scene henry_v_gut.txt "Act IV, Scene VII" --merge 15`
 - **Caching**: Previously analyzed units retrieved from database (fast)
 - **Hybrid storage**: Both database (granular) and markdown file (readable)
 - **Speech boundaries**: Natural dramatic units when not merging
-- **Merge trade-off**: Fewer API calls but less granular caching
+- **Merge trade-off**: Fewer calls but less granular caching
 - **Recommended**: Use `--merge 15` for initial processing, no merge for reruns

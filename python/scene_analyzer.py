@@ -286,6 +286,10 @@ class SceneAnalyzer:
     def _merge_speeches_into_chunks(self, speeches: list[Speech]) -> list[SpeechChunk]:
         """Merge consecutive small speeches into larger chunks.
 
+        Speeches are never split - each speech stays intact. Chunks are closed
+        when adding the next speech would exceed the threshold, ensuring a
+        character's dialogue is always analyzed as a complete unit.
+
         Args:
             speeches: List of individual Speech objects.
 
@@ -304,11 +308,10 @@ class SceneAnalyzer:
         current_lines = 0
 
         for speech in speeches:
-            current_speeches.append(speech)
-            current_lines += speech.line_count
-
-            # If we've reached threshold, close this chunk
-            if current_lines >= self.merge_threshold:
+            # Check if adding this speech would exceed threshold
+            # (but always include at least one speech per chunk)
+            if current_speeches and current_lines + speech.line_count > self.merge_threshold:
+                # Close current chunk before adding this speech
                 combined_text = "\n\n".join(s.text for s in current_speeches)
                 chunks.append(SpeechChunk(
                     speeches=current_speeches,
@@ -316,6 +319,10 @@ class SceneAnalyzer:
                 ))
                 current_speeches = []
                 current_lines = 0
+
+            # Add speech to current chunk
+            current_speeches.append(speech)
+            current_lines += speech.line_count
 
         # Don't forget remaining speeches
         if current_speeches:
@@ -448,20 +455,6 @@ class SceneAnalyzer:
         lines.append(f"## Act {self.act}, Scene {self.scene}")
         lines.append("")
         lines.append(f"*{scene_header.strip()}*")
-        lines.append("")
-        lines.append("---")
-        lines.append("")
-
-        # Table of contents - list all speeches across all chunks
-        lines.append("### Speeches")
-        lines.append("")
-        speech_num = 1
-        for chunk in chunks:
-            for speech in chunk.speeches:
-                anchor = f"speech-{speech_num}"
-                lines.append(f"{speech_num}. [{speech.speaker}](#{anchor}) "
-                            f"({speech.line_count} lines)")
-                speech_num += 1
         lines.append("")
         lines.append("---")
         lines.append("")
@@ -669,10 +662,10 @@ Examples:
     # Dry run to see what would be processed
     python scene_analyzer.py henry_v_gut.txt "Act IV, Scene VII" --dry-run
 
-    # Merge small speeches into 15-line chunks (reduces API calls)
+    # Merge small speeches into 15-line chunks (fewer Claude Code calls)
     python scene_analyzer.py henry_v_gut.txt 4 7 --merge 15
 
-    # Use API backend instead of claude-code
+    # Use direct API backend instead of claude-code
     python scene_analyzer.py henry_v_gut.txt 4 7 --backend api
         """
     )
@@ -703,12 +696,12 @@ Examples:
         type=int,
         default=0,
         metavar='LINES',
-        help='Merge speeches into chunks of at least N lines (reduces API calls)'
+        help='Merge speeches into chunks of at least N lines (fewer calls)'
     )
     parser.add_argument(
         '--dry-run', '-n',
         action='store_true',
-        help='Show what would be processed without calling API'
+        help='Show what would be processed without calling Claude Code'
     )
 
     args = parser.parse_args()

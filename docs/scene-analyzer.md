@@ -47,7 +47,7 @@ python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
 ### Dry Run (Preview)
 
 ```bash
-# See what would be processed without calling API
+# See what would be processed without calling Claude Code
 python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
     ~/utono/literature/shakespeare-william/gutenberg/henry_v_gut.txt \
     "Act IV, Scene VII" --dry-run
@@ -56,14 +56,18 @@ python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
 ### Merge Small Speeches (Recommended)
 
 ```bash
-# Merge speeches into ~15-line chunks (reduces API calls)
+# Merge speeches into chunks of ~15 lines (reduces Claude Code calls)
 python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
     ~/utono/literature/shakespeare-william/gutenberg/henry_v_gut.txt \
     "Act IV, Scene VII" --merge 15
 ```
 
 Example: Act 4, Scene 7 of Henry V has 53 speeches. With `--merge 15`, this
-becomes 10 chunks - reducing API calls by 80%.
+becomes ~10 chunks - reducing Claude Code calls by ~80%.
+
+**Note:** Speeches are never split across chunks. Each character's dialogue
+stays intact. Chunks close when adding the next speech would exceed the
+threshold. A speech longer than the threshold becomes its own chunk.
 
 ### Workflow with `<M-a>`
 
@@ -75,8 +79,8 @@ becomes 10 chunks - reducing API calls by 80%.
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--dry-run` | `-n` | Preview without calling API |
-| `--merge N` | `-m N` | Merge speeches into N-line chunks |
+| `--dry-run` | `-n` | Preview without calling Claude Code |
+| `--merge N` | `-m N` | Merge speeches into ~N-line chunks (never splits) |
 | `--backend` | `-b` | `api` or `claude-code` (default: claude-code) |
 | `--output-dir` | `-o` | Override output directory |
 
@@ -173,6 +177,21 @@ Run: `./analyze_play.sh ~/utono/literature/shakespeare-william/gutenberg/hamlet_
 6. **Save to database** - Store each unit for future reuse
 7. **Write markdown** - Aggregate all analyses into scene file
 
+### Text Pattern Recognition
+
+The parser uses regex patterns to identify structural elements:
+
+| Element | Pattern | Example |
+|---------|---------|---------|
+| Act markers | `^ACT\s+[IVX]+\.\s*$` | "ACT IV." |
+| Scene markers | `^SCENE\s+[IVX]+\.\s*(.*)$` | "SCENE VII. Another part..." |
+| Speaker names | `^([A-Z][A-Z\s]+)\.\s*$` | "KING HENRY." |
+| Stage directions | `^\[.*\]\s*$` | "[Exit]" |
+
+**Dialogue lines:** Everything after a speaker name that isn't a stage
+direction, new speaker, or act/scene marker is treated as dialogue belonging
+to that speaker.
+
 ### Hybrid Storage
 
 - **Database** (`~/utono/literature/gloss.db`): Granular, searchable cache
@@ -230,13 +249,14 @@ Error: Scene 4.9 (Act IV, Scene IX) not found in henry_v_gut.txt
 
 The scene doesn't exist. Use `--dry-run` to verify scene numbers.
 
-### API Errors
+### Claude Code Errors
 
-If Claude Code backend fails, try direct API:
+If Claude Code backend fails, you can try the direct API as a fallback:
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
-python ~/utono/nvim-glosses-qa/python/scene_analyzer.py play.txt 4 7 --backend api --merge 15
+python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
+    play.txt 4 7 --backend api --merge 15
 ```
 
 ### Check Cache Status
