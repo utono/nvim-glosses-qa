@@ -342,16 +342,20 @@ class PlayParser:
         for i in range(start_line, end_line + 1):
             line = self.lines[i].rstrip()
 
-            # Skip empty lines
+            # Check for new speaker first (before handling empty lines)
+            speaker_match = self.SPEAKER_PATTERN.match(line.strip()) if line.strip() else None
+
+            # Handle empty lines - preserve them within speeches for proper formatting
             if not line.strip():
+                # Only add empty line if we're inside a speech
+                if current_speaker and current_lines:
+                    current_lines.append('')
                 continue
 
             # Check for pure stage directions (lines that are only [bracketed text])
             # Include them in speech text for display, but they won't be analyzed line-by-line
             is_stage_direction = self.STAGE_DIR_PATTERN.match(line.strip())
 
-            # Check for new speaker
-            speaker_match = self.SPEAKER_PATTERN.match(line.strip())
             if speaker_match:
                 # Save previous speech if exists
                 if current_speaker and current_lines:
