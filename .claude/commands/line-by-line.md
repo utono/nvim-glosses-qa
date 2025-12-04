@@ -16,10 +16,9 @@ For each line of the original passage, provide in flowing prose:
 1. The line itself quoted in bold
 2. What it literally means (1-2 sentences)
 3. The operative word(s) — which must "land" for meaning to arrive
-4. Breath/thought guidance — where thought continues vs. completes
-5. Acting insight — one practical performance note
+4. Acting insight — one practical performance note
 
-**Do NOT use labels** like "Meaning:", "Operative:", "Breath:", "Acting:".
+**Do NOT use labels** like "Meaning:", "Operative:", "Acting:".
 **Do NOT number lines** like "LINE 1:", "LINE 2:".
 Write each analysis as a cohesive paragraph.
 
@@ -29,8 +28,7 @@ Write each analysis as a cohesive paragraph.
 **"What infinite heart's ease must kings neglect"**
 
 What limitless peace of mind kings must give up. The operative word
-is "neglect" — not "lose" but actively ignore, sacrifice. Thought
-continues to the next line; no breath after "neglect". The question
+is "neglect" — not "lose" but actively ignore, sacrifice. The question
 is bitter, not curious. Henry already knows the answer. Weight on
 "infinite" — the loss is measureless.
 
@@ -39,9 +37,9 @@ is bitter, not curious. Henry already knows the answer. Weight on
 **"That private men enjoy?"**
 
 That ordinary people have freely. "Private" is the word Henry envies;
-"enjoy" lands the contrast. Question ends here — brief pause. The
-comparison is complete. "Private men" isn't contemptuous — it's
-wistful. These are the people Henry wishes he could be.
+"enjoy" lands the contrast. The comparison is complete. "Private men"
+isn't contemptuous — it's wistful. These are the people Henry wishes
+he could be.
 
 ---
 
@@ -79,7 +77,6 @@ actor wants to continue or explore anything deeper.
 ---
 That's the full passage line by line.
 
-→ Want to run it aloud? I can give breath marks and cues.
 → Want to focus on a specific section?
 → Ready to explore themes? Ask about any word or phrase.
 ```
