@@ -149,6 +149,32 @@ def search_passages(query: str, play_name: Optional[str] = None) -> list[dict]:
     return results
 
 
+def get_most_recent_passage() -> Optional[dict]:
+    """Get the most recently created passage.
+
+    Returns:
+        Most recent passage dict or None if database is empty.
+    """
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT
+            p.id, p.hash, p.source_text, p.source_file, p.play_name,
+            p.act, p.scene, p.line_number, p.character,
+            g.gloss_type, g.gloss_text
+        FROM passages p
+        JOIN glosses g ON g.passage_id = p.id
+        ORDER BY p.id DESC
+        LIMIT 1
+    """)
+
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 def get_passage_by_hash(hash_value: str) -> Optional[dict]:
     """Get a single passage by hash.
 
@@ -181,13 +207,17 @@ def get_passage_by_hash(hash_value: str) -> Optional[dict]:
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: db_queries.py <command> [args...]", file=sys.stderr)
-        print("Commands: plays, passages <play>, qa <passage_id>, search <query> [play]",
+        print("Commands: plays, passages <play>, qa <passage_id>, search <query> [play], recent",
               file=sys.stderr)
         sys.exit(1)
 
     command = sys.argv[1]
 
-    if command == "plays":
+    if command == "recent":
+        result = get_most_recent_passage()
+        print(json.dumps(result))
+
+    elif command == "plays":
         result = get_plays()
         print(json.dumps(result))
 

@@ -89,10 +89,26 @@ class PlayParser:
     """Parse a play file to extract scenes and speeches."""
 
     # Patterns for play structure
-    ACT_PATTERN = re.compile(r'^ACT\s+([IVX]+)\.\s*$', re.IGNORECASE)
+    # ACT pattern matches both Roman numerals (ACT IV.) and ordinal words (ACT FIRST.)
+    ACT_PATTERN = re.compile(
+        r'^ACT\s+([IVX]+|FIRST|SECOND|THIRD|FOURTH|FIFTH)\.\s*$',
+        re.IGNORECASE
+    )
     SCENE_PATTERN = re.compile(r'^SCENE\s+([IVX]+)\.\s*(.*)$', re.IGNORECASE)
+    # Combined ACT + SCENE on same line (e.g., "ACT IV. SCENE I. Location.")
+    ACT_SCENE_COMBINED_PATTERN = re.compile(
+        r'^ACT\s+([IVX]+|FIRST|SECOND|THIRD|FOURTH|FIFTH)\.\s*SCENE\s+([IVX]+)\.\s*(.*)$',
+        re.IGNORECASE
+    )
+    PROLOGUE_PATTERN = re.compile(r'^PROLOGUE\.\s*$', re.IGNORECASE)
+    EPILOGUE_PATTERN = re.compile(r'^EPILOGUE\.\s*$', re.IGNORECASE)
     SPEAKER_PATTERN = re.compile(r'^([A-Z][A-Z\s]+)\.\s*$')
     STAGE_DIR_PATTERN = re.compile(r'^\[.*\]\s*$')
+
+    # Ordinal words to integers
+    ORDINAL_TO_INT = {
+        'FIRST': 1, 'SECOND': 2, 'THIRD': 3, 'FOURTH': 4, 'FIFTH': 5
+    }
 
     def __init__(self, play_file: Path):
         """Initialize parser with play file.
@@ -134,12 +150,26 @@ class PlayParser:
                 num -= v
         return result
 
+    def _normalize_act(self, act_str: str) -> int:
+        """Normalize act string (Roman numeral or ordinal word) to integer.
+
+        Args:
+            act_str: Act identifier like 'III', 'FIRST', 'IV', etc.
+
+        Returns:
+            Integer act number.
+        """
+        act_upper = act_str.upper()
+        if act_upper in self.ORDINAL_TO_INT:
+            return self.ORDINAL_TO_INT[act_upper]
+        return self._roman_to_int(act_upper)
+
     def find_scene(self, act: int, scene: int) -> tuple[int, int]:
         """Find the start and end line numbers for a scene.
 
         Args:
-            act: Act number (integer)
-            scene: Scene number (integer)
+            act: Act number (integer), or 0 for opening prologue
+            scene: Scene number (integer), or 0 for prologue
 
         Returns:
             Tuple of (start_line, end_line) as 0-indexed line numbers.
@@ -147,32 +177,59 @@ class PlayParser:
         Raises:
             ValueError: If scene not found.
         """
-        target_act = self._int_to_roman(act)
-        target_scene = self._int_to_roman(scene)
+        # Handle prologue (scene=0) and epilogue (scene=-1)
+        if scene == 0:
+            return self._find_prologue(act)
+        if scene == -1:
+            return self._find_epilogue()
+
+        # Use integer comparison for flexibility with different formats
+        target_act = act
+        target_scene = scene
 
         current_act = None
         scene_start = None
         scene_end = None
 
         for i, line in enumerate(self.lines):
-            # Check for act header
-            act_match = self.ACT_PATTERN.match(line.strip())
-            if act_match:
-                current_act = act_match.group(1).upper()
-                continue
+            stripped = line.strip()
 
-            # Check for scene header
-            scene_match = self.SCENE_PATTERN.match(line.strip())
-            if scene_match:
-                scene_num = scene_match.group(1).upper()
+            # Check for combined ACT + SCENE on same line (e.g., "ACT IV. SCENE I.")
+            combined_match = self.ACT_SCENE_COMBINED_PATTERN.match(stripped)
+            if combined_match:
+                line_act = self._normalize_act(combined_match.group(1))
+                line_scene = self._roman_to_int(combined_match.group(2))
 
                 # If we already found our scene, this marks the end
                 if scene_start is not None:
                     scene_end = i - 1
                     break
 
-                # Check if this is our target scene
-                if (current_act == target_act and scene_num == target_scene):
+                # Update current act and check if this is our target
+                current_act = line_act
+                if line_act == target_act and line_scene == target_scene:
+                    scene_start = i
+                continue
+
+            # Check for act header (standalone)
+            act_match = self.ACT_PATTERN.match(stripped)
+            if act_match:
+                # Normalize to integer (handles both Roman and ordinal words)
+                current_act = self._normalize_act(act_match.group(1))
+                continue
+
+            # Check for scene header (standalone)
+            scene_match = self.SCENE_PATTERN.match(stripped)
+            if scene_match:
+                scene_num = self._roman_to_int(scene_match.group(1))
+
+                # If we already found our scene, this marks the end
+                if scene_start is not None:
+                    scene_end = i - 1
+                    break
+
+                # Check if this is our target scene (integer comparison)
+                if current_act == target_act and scene_num == target_scene:
                     scene_start = i
 
         # If scene_end not set, scene goes to end of file
@@ -181,11 +238,91 @@ class PlayParser:
 
         if scene_start is None:
             raise ValueError(
-                f"Scene {act}.{scene} (Act {target_act}, Scene {target_scene}) "
-                f"not found in {self.play_file}"
+                f"Scene {act}.{scene} (Act {self._int_to_roman(act)}, "
+                f"Scene {self._int_to_roman(scene)}) not found in {self.play_file}"
             )
 
         return scene_start, scene_end
+
+    def _find_prologue(self, act: int) -> tuple[int, int]:
+        """Find the prologue for a specific act.
+
+        Args:
+            act: Act number (1-5), or 0 for opening prologue before Act 1
+
+        Returns:
+            Tuple of (start_line, end_line) as 0-indexed line numbers.
+
+        Raises:
+            ValueError: If prologue not found.
+        """
+        current_act = 0  # 0 = before any act header (opening prologue)
+        prologue_start = None
+        prologue_end = None
+
+        for i, line in enumerate(self.lines):
+            stripped = line.strip()
+
+            # Check for act header
+            act_match = self.ACT_PATTERN.match(stripped)
+            if act_match:
+                current_act = self._normalize_act(act_match.group(1))
+                continue
+
+            # Check for prologue header
+            if self.PROLOGUE_PATTERN.match(stripped):
+                # If we already found our prologue, this marks the end
+                if prologue_start is not None:
+                    prologue_end = i - 1
+                    break
+
+                # Check if this is our target prologue
+                # act=0 means opening prologue (before any ACT marker)
+                # act=N means the prologue right after ACT N header
+                if current_act == act:
+                    prologue_start = i
+
+            # Scene header also ends the prologue
+            scene_match = self.SCENE_PATTERN.match(stripped)
+            if scene_match and prologue_start is not None:
+                prologue_end = i - 1
+                break
+
+        # If prologue_end not set, prologue goes to next major marker
+        if prologue_start is not None and prologue_end is None:
+            prologue_end = len(self.lines) - 1
+
+        if prologue_start is None:
+            if act == 0:
+                raise ValueError(f"Opening prologue not found in {self.play_file}")
+            raise ValueError(
+                f"Prologue for Act {self._int_to_roman(act)} not found in "
+                f"{self.play_file}"
+            )
+
+        return prologue_start, prologue_end
+
+    def _find_epilogue(self) -> tuple[int, int]:
+        """Find the epilogue section.
+
+        Returns:
+            Tuple of (start_line, end_line) as 0-indexed line numbers.
+
+        Raises:
+            ValueError: If epilogue not found.
+        """
+        epilogue_start = None
+
+        for i, line in enumerate(self.lines):
+            if self.EPILOGUE_PATTERN.match(line.strip()):
+                epilogue_start = i
+                break
+
+        if epilogue_start is None:
+            raise ValueError(f"Epilogue not found in {self.play_file}")
+
+        # Epilogue goes to end of file
+        return epilogue_start, len(self.lines) - 1
 
     def extract_speeches(self, start_line: int, end_line: int) -> list[Speech]:
         """Extract individual speeches from a line range.
@@ -209,9 +346,9 @@ class PlayParser:
             if not line.strip():
                 continue
 
-            # Skip pure stage directions (lines that are only [bracketed text])
-            if self.STAGE_DIR_PATTERN.match(line.strip()):
-                continue
+            # Check for pure stage directions (lines that are only [bracketed text])
+            # Include them in speech text for display, but they won't be analyzed line-by-line
+            is_stage_direction = self.STAGE_DIR_PATTERN.match(line.strip())
 
             # Check for new speaker
             speaker_match = self.SPEAKER_PATTERN.match(line.strip())
@@ -520,8 +657,17 @@ class SceneAnalyzer:
         Returns:
             Path to the generated markdown file.
         """
-        logger.info(f"Analyzing {self.play_name} Act {self.act}, "
-                   f"Scene {self.scene}...")
+        # Log what we're analyzing (handle prologues/epilogue specially)
+        if self.scene == -1:
+            logger.info(f"Analyzing {self.play_name} Epilogue...")
+        elif self.scene == 0:
+            if self.act == 0:
+                logger.info(f"Analyzing {self.play_name} Prologue...")
+            else:
+                logger.info(f"Analyzing {self.play_name} Act {self.act} Prologue...")
+        else:
+            logger.info(f"Analyzing {self.play_name} Act {self.act}, "
+                       f"Scene {self.scene}...")
 
         # Find scene boundaries
         start_line, end_line = self.parser.find_scene(self.act, self.scene)
@@ -539,7 +685,15 @@ class SceneAnalyzer:
                        f"(threshold: {self.merge_threshold} lines)")
 
         if dry_run:
-            print(f"\nDry run: {self.play_name} Act {self.act}, Scene {self.scene}")
+            if self.scene == -1:
+                print(f"\nDry run: {self.play_name} Epilogue")
+            elif self.scene == 0:
+                if self.act == 0:
+                    print(f"\nDry run: {self.play_name} Prologue")
+                else:
+                    print(f"\nDry run: {self.play_name} Act {self.act} Prologue")
+            else:
+                print(f"\nDry run: {self.play_name} Act {self.act}, Scene {self.scene}")
             print(f"Scene location: lines {start_line}-{end_line}")
             print(f"Total speeches: {len(speeches)}")
             if self.merge_threshold > 0:
@@ -575,7 +729,16 @@ class SceneAnalyzer:
         play_dir = self.output_dir / self.play_name
         play_dir.mkdir(parents=True, exist_ok=True)
 
-        output_filename = f"act{self.act}_scene{self.scene}_line-by-line.md"
+        # Generate filename based on act/scene (handle prologues/epilogue specially)
+        if self.scene == -1:
+            output_filename = "epilogue_line-by-line.md"
+        elif self.scene == 0:
+            if self.act == 0:
+                output_filename = "prologue_line-by-line.md"
+            else:
+                output_filename = f"act{self.act}_prologue_line-by-line.md"
+        else:
+            output_filename = f"act{self.act}_scene{self.scene}_line-by-line.md"
         output_path = play_dir / output_filename
 
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -586,19 +749,23 @@ class SceneAnalyzer:
 
 
 def parse_act_scene_string(act_scene: str) -> tuple[int, int]:
-    """Parse 'Act IV, Scene VII' format to integers.
+    """Parse 'Act IV, Scene VII', 'Prologue', or 'Epilogue' format to integers.
 
     Accepts formats like:
     - "Act IV, Scene VII"
     - "Act 4, Scene 7"
     - "act iv scene vii"
     - "Act IV Scene 7"
+    - "Prologue" (returns act=0, scene=0 for opening prologue)
+    - "Act 2 Prologue" or "Act II Prologue" (returns act=N, scene=0)
+    - "Epilogue" (returns act=0, scene=-1)
 
     Args:
-        act_scene: String in "Act N, Scene M" format
+        act_scene: String in "Act N, Scene M", "Prologue", or "Epilogue" format
 
     Returns:
-        Tuple of (act_number, scene_number) as integers
+        Tuple of (act_number, scene_number) as integers.
+        For prologues, scene=0. For epilogue, scene=-1.
 
     Raises:
         ValueError: If format is not recognized
@@ -620,6 +787,25 @@ def parse_act_scene_string(act_scene: str) -> tuple[int, int]:
     # Normalize input
     text = act_scene.strip().upper()
 
+    # Check for "Prologue" or "Scene Prologue" (opening prologue before Act 1)
+    if text in ('PROLOGUE', 'SCENE PROLOGUE'):
+        return 0, 0
+
+    # Check for "Epilogue" or "Scene Epilogue"
+    if text in ('EPILOGUE', 'SCENE EPILOGUE'):
+        return 0, -1
+
+    # Check for "Act N Prologue" format
+    prologue_pattern = r'ACT\s+([IVXLC]+|\d+)[,\s]+PROLOGUE'
+    prologue_match = re.match(prologue_pattern, text)
+    if prologue_match:
+        act_str = prologue_match.group(1)
+        if act_str.isdigit():
+            act = int(act_str)
+        else:
+            act = roman_to_int(act_str)
+        return act, 0
+
     # Pattern: "ACT <num>, SCENE <num>" or "ACT <num> SCENE <num>"
     # Where <num> can be Roman (IV) or Arabic (4)
     pattern = r'ACT\s+([IVXLC]+|\d+)[,\s]+SCENE\s+([IVXLC]+|\d+)'
@@ -628,7 +814,8 @@ def parse_act_scene_string(act_scene: str) -> tuple[int, int]:
     if not match:
         raise ValueError(
             f"Could not parse '{act_scene}'. "
-            "Expected format: 'Act IV, Scene VII' or 'Act 4, Scene 7'"
+            "Expected format: 'Act IV, Scene VII', 'Act 4, Scene 7', "
+            "'Prologue', 'Act 2 Prologue', or 'Epilogue'"
         )
 
     act_str, scene_str = match.groups()
