@@ -59,8 +59,8 @@ class Speech:
 
     @property
     def line_count(self) -> int:
-        """Number of dialogue lines (excluding speaker name)."""
-        return len(self.lines)
+        """Total lines including speaker name."""
+        return len(self.lines) + 1  # +1 for "SPEAKER." line
 
     @property
     def has_dialogue(self) -> bool:
@@ -929,8 +929,8 @@ Examples:
     # Dry run to see what would be processed
     python scene_analyzer.py henry_v_gut.txt "Act IV, Scene VII" --dry-run
 
-    # Merge small speeches into 15-line chunks (fewer Claude Code calls)
-    python scene_analyzer.py henry_v_gut.txt 4 7 --merge 15
+    # Merge small speeches into 42-line chunks (fewer Claude Code calls)
+    python scene_analyzer.py henry_v_gut.txt 4 7 --merge 42
 
     # Use direct API backend instead of claude-code
     python scene_analyzer.py henry_v_gut.txt 4 7 --backend api
