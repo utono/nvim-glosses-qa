@@ -21,7 +21,7 @@ viewing passages and their Q&A pages.
 | `.` | Next passage in current play |
 | `,` | Previous passage in current play |
 | `Tab` | Toggle passage / Q&A pages |
-| `<leader>gp` | Pick different play, then fuzzy search for passage |
+| `<M-y>` | Pick different play, then fuzzy search for passage |
 | `<leader>gf` | Find any passage in any play (fuzzy search) |
 | `<leader>gb` | Go back to previous play/position |
 
@@ -32,7 +32,7 @@ viewing passages and their Q&A pages.
 On first `,` or `.` press, the viewer auto-detects the play from the current
 buffer's associated passage (`play_name` field in database).
 
-### Play Picker (`<leader>gp`)
+### Play Picker (`<M-y>`)
 
 1. Fuzzy list of all plays in database
 2. User selects play
