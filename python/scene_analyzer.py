@@ -454,7 +454,7 @@ class SceneAnalyzer:
             # (but always include at least one speech per chunk)
             if current_speeches and current_lines + speech.line_count > self.merge_threshold:
                 # Close current chunk before adding this speech
-                combined_text = "\n\n".join(s.text for s in current_speeches)
+                combined_text = "\n\n".join(s.text.rstrip() for s in current_speeches)
                 chunks.append(SpeechChunk(
                     speeches=current_speeches,
                     text=combined_text
@@ -468,7 +468,7 @@ class SceneAnalyzer:
 
         # Don't forget remaining speeches
         if current_speeches:
-            combined_text = "\n\n".join(s.text for s in current_speeches)
+            combined_text = "\n\n".join(s.text.rstrip() for s in current_speeches)
             chunks.append(SpeechChunk(
                 speeches=current_speeches,
                 text=combined_text
@@ -558,9 +558,13 @@ class SceneAnalyzer:
         prompt = prompt_builder.build_line_by_line_prompt()
         raw_analysis = self.backend.generate(prompt)
 
-        # Prepend speaker name(s) (uppercase with period) before analysis
-        speakers = "\n".join(f"{s.speaker.upper()}." for s in chunk.speeches)
-        analysis = f"{speakers}\n\n{raw_analysis}"
+        # For single-speech chunks, prepend the speaker name
+        # For multi-speech chunks, the raw analysis handles speaker names
+        # since the input text includes them before each speech
+        if len(chunk.speeches) == 1:
+            analysis = f"{chunk.speeches[0].speaker.upper()}.\n\n{raw_analysis}"
+        else:
+            analysis = raw_analysis
 
         # Save to database using first speech's metadata
         first_speech = chunk.speeches[0]
