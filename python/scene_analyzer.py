@@ -19,6 +19,7 @@ import logging
 import os
 import re
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -59,6 +60,45 @@ def setup_scene_logging() -> logging.Logger:
 
 
 logger = setup_scene_logging()
+
+
+# Structured error codes for Claude Code intervention
+class ErrorCode:
+    """Error codes for structured error output."""
+    SCENE_NOT_FOUND = "scene_not_found"
+    API_FAILURE = "api_failure"
+    API_RATE_LIMIT = "api_rate_limit"
+    DATABASE_ERROR = "database_error"
+    FILE_ERROR = "file_error"
+    VALIDATION_ERROR = "validation_error"
+
+
+def print_structured_error(
+    code: str,
+    message: str,
+    context: dict = None,
+    suggestion: str = None,
+    action: str = None
+) -> None:
+    """Print a structured error message for Claude Code to parse.
+
+    Args:
+        code: Error code from ErrorCode class
+        message: Human-readable error message
+        context: Dict of contextual information (scene, file, chunk, etc.)
+        suggestion: Suggested fix or next step
+        action: Action to take (e.g., "Skip this scene", "Retry")
+    """
+    print(f"\n[ERROR] {code}", file=sys.stderr)
+    print(f"  Message: {message}", file=sys.stderr)
+    if context:
+        for key, value in context.items():
+            print(f"  {key.title()}: {value}", file=sys.stderr)
+    if suggestion:
+        print(f"  Suggestion: {suggestion}", file=sys.stderr)
+    if action:
+        print(f"  Action: {action}", file=sys.stderr)
+    print("", file=sys.stderr)
 
 
 @dataclass
@@ -456,7 +496,8 @@ class SceneAnalyzer:
 
     def __init__(self, play_file: Path, act: int, scene: int,
                  backend: str = None, output_dir: Path = None,
-                 merge_threshold: int = 0):
+                 merge_threshold: int = 0, retry_count: int = 3,
+                 retry_delay: int = 30):
         """Initialize scene analyzer.
 
         Args:
@@ -467,6 +508,8 @@ class SceneAnalyzer:
             output_dir: Directory for output files. Defaults to GLOSSES_DIR.
             merge_threshold: Minimum lines per chunk. Speeches are merged until
                            this threshold is reached. 0 = no merging.
+            retry_count: Number of times to retry failed API calls.
+            retry_delay: Initial delay in seconds between retries (exponential).
         """
         self.play_file = Path(play_file)
         self.act = act
@@ -475,6 +518,8 @@ class SceneAnalyzer:
         self.backend_type = backend or os.getenv('GLOSS_BACKEND', DEFAULT_BACKEND)
         self.output_dir = output_dir or GLOSSES_DIR
         self.merge_threshold = merge_threshold
+        self.retry_count = retry_count
+        self.retry_delay = retry_delay
         self.db = GlossDatabase()
         self.db.setup()  # Ensure tables exist
 
@@ -605,6 +650,9 @@ class SceneAnalyzer:
 
         Returns:
             The analysis text.
+
+        Raises:
+            RuntimeError: If API call fails after all retries exhausted.
         """
         # Check cache first using chunk hash
         existing = self.db.get_existing(chunk.hash, 'line-by-line')
@@ -616,10 +664,54 @@ class SceneAnalyzer:
         logger.info(f"  Generating analysis for chunk: {chunk.speaker_summary} "
                    f"({chunk.line_count} lines)...")
 
-        # Build prompt and generate
+        # Build prompt and generate with retry logic
         prompt_builder = PromptBuilder(chunk.text)
         prompt = prompt_builder.build_line_by_line_prompt()
-        raw_analysis = self.backend.generate(prompt)
+
+        last_error = None
+        for attempt in range(self.retry_count + 1):
+            try:
+                raw_analysis = self.backend.generate(prompt)
+                break  # Success, exit retry loop
+            except RuntimeError as e:
+                last_error = e
+                error_msg = str(e).lower()
+
+                # Check if it's a rate limit error
+                is_rate_limit = 'rate' in error_msg or 'limit' in error_msg
+
+                if attempt < self.retry_count:
+                    # Calculate delay with exponential backoff
+                    delay = self.retry_delay * (2 ** attempt)
+                    if is_rate_limit:
+                        # Rate limits get longer delays
+                        delay = max(delay, 60)
+
+                    logger.warning(
+                        f"  API call failed (attempt {attempt + 1}/{self.retry_count + 1}): {e}"
+                    )
+                    logger.info(f"  Retrying in {delay} seconds...")
+
+                    print_structured_error(
+                        ErrorCode.API_RATE_LIMIT if is_rate_limit else ErrorCode.API_FAILURE,
+                        str(e),
+                        context={
+                            "chunk": chunk.speaker_summary,
+                            "attempt": f"{attempt + 1}/{self.retry_count + 1}"
+                        },
+                        suggestion=f"Automatic retry in {delay} seconds",
+                        action="Waiting before retry"
+                    )
+
+                    time.sleep(delay)
+                else:
+                    # All retries exhausted
+                    logger.error(
+                        f"  API call failed after {self.retry_count + 1} attempts: {e}"
+                    )
+                    raise RuntimeError(
+                        f"API call failed after {self.retry_count + 1} attempts: {last_error}"
+                    ) from last_error
 
         # For single-speech chunks, prepend the speaker name only if not present
         # For multi-speech chunks, the raw analysis handles speaker names
@@ -740,12 +832,14 @@ class SceneAnalyzer:
 
         return "\n".join(lines)
 
-    def analyze(self, dry_run: bool = False) -> Path:
+    def analyze(self, dry_run: bool = False, status_only: bool = False) -> Path:
         """Analyze the entire scene.
 
         Args:
             dry_run: If True, just show what would be processed without
                     calling the API.
+            status_only: If True, just check cache status and exit with
+                        code 0 if all cached, 1 if work needed.
 
         Returns:
             Path to the generated markdown file.
@@ -783,6 +877,41 @@ class SceneAnalyzer:
         if self.merge_threshold > 0:
             logger.info(f"Merged into {len(chunks)} chunks "
                        f"(threshold: {self.merge_threshold} lines)")
+
+        # Check cache status for all chunks
+        cached_count = 0
+        new_chunks = []
+        for chunk in chunks:
+            if self.db.get_existing(chunk.hash, 'line-by-line'):
+                cached_count += 1
+            else:
+                new_chunks.append(chunk)
+        new_count = len(chunks) - cached_count
+
+        # Build scene label for display
+        if self.scene == -1:
+            scene_label = "Epilogue"
+        elif self.scene == 0:
+            scene_label = "Prologue" if self.act == 0 else f"Act {self.act} Prologue"
+        else:
+            scene_label = f"Act {self.act} Scene {self.scene}"
+
+        # Status-only mode: just report and exit
+        if status_only:
+            if new_count == 0:
+                print(f"{scene_label}: {len(chunks)} chunks (all cached)")
+                sys.exit(0)
+            else:
+                print(f"{scene_label}: {len(chunks)} chunks "
+                      f"({cached_count} cached, {new_count} to process)")
+                sys.exit(1)
+
+        # Show cache summary before processing
+        if new_count == 0:
+            print(f"{scene_label}: {len(chunks)} chunks (all cached)")
+        else:
+            print(f"{scene_label}: {len(chunks)} chunks "
+                  f"({cached_count} cached, {new_count} to process)")
 
         if dry_run:
             if self.scene == -1:
@@ -991,6 +1120,30 @@ Examples:
         action='store_true',
         help='Show what would be processed without calling Claude Code'
     )
+    parser.add_argument(
+        '--status', '-s',
+        action='store_true',
+        help='Show cache status only (exit code 0 if all cached, 1 if work needed)'
+    )
+    parser.add_argument(
+        '--retry', '-r',
+        type=int,
+        default=3,
+        metavar='N',
+        help='Retry failed API calls N times (default: 3)'
+    )
+    parser.add_argument(
+        '--retry-delay',
+        type=int,
+        default=30,
+        metavar='SECONDS',
+        help='Initial delay between retries in seconds (default: 30)'
+    )
+    parser.add_argument(
+        '--validate', '-v',
+        action='store_true',
+        help='Validate scene exists in play file (exit 0 if found, 1 if not)'
+    )
 
     args = parser.parse_args()
 
@@ -1027,13 +1180,54 @@ Examples:
 
     # Validate play file exists
     if not args.play_file.exists():
-        print(f"Error: Play file not found: {args.play_file}", file=sys.stderr)
+        print_structured_error(
+            ErrorCode.FILE_ERROR,
+            f"Play file not found: {args.play_file}",
+            context={"file": str(args.play_file)},
+            suggestion="Check the file path is correct",
+            action="Fix path and retry"
+        )
         sys.exit(1)
 
     # Check for API key if using API backend
     if args.backend == 'api' and not os.getenv("ANTHROPIC_API_KEY"):
-        print("Error: ANTHROPIC_API_KEY not set", file=sys.stderr)
+        print_structured_error(
+            ErrorCode.VALIDATION_ERROR,
+            "ANTHROPIC_API_KEY environment variable not set",
+            suggestion="Set ANTHROPIC_API_KEY or use --backend claude-code",
+            action="Export API key and retry"
+        )
         sys.exit(1)
+
+    # Build scene label for error context
+    if scene == -1:
+        scene_label = "Epilogue"
+    elif scene == 0:
+        scene_label = "Prologue" if act == 0 else f"Act {act} Prologue"
+    else:
+        scene_label = f"Act {act} Scene {scene}"
+
+    # Validate mode: just check if scene exists
+    if args.validate:
+        try:
+            parser = PlayParser(args.play_file)
+            start_line, end_line = parser.find_scene(act, scene)
+            scene_header = parser.lines[start_line].strip()
+            print(f"✓ {scene_label} - found at line {start_line + 1}: {scene_header}")
+            sys.exit(0)
+        except ValueError as e:
+            print(f"✗ {scene_label} - NOT FOUND", file=sys.stderr)
+            print_structured_error(
+                ErrorCode.SCENE_NOT_FOUND,
+                str(e),
+                context={
+                    "scene": scene_label,
+                    "file": str(args.play_file.name)
+                },
+                suggestion="Scene may not exist in this edition",
+                action="Check play structure or regenerate script"
+            )
+            sys.exit(1)
 
     try:
         analyzer = SceneAnalyzer(
@@ -1042,23 +1236,72 @@ Examples:
             scene=scene,
             backend=args.backend,
             output_dir=args.output_dir,
-            merge_threshold=args.merge
+            merge_threshold=args.merge,
+            retry_count=args.retry,
+            retry_delay=args.retry_delay
         )
 
-        output_path = analyzer.analyze(dry_run=args.dry_run)
+        output_path = analyzer.analyze(
+            dry_run=args.dry_run,
+            status_only=args.status
+        )
 
         if output_path:
             print(f"\nScene analysis saved to: {output_path}")
 
     except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        error_msg = str(e)
+        if "not found" in error_msg.lower():
+            print_structured_error(
+                ErrorCode.SCENE_NOT_FOUND,
+                error_msg,
+                context={
+                    "scene": scene_label,
+                    "file": str(args.play_file.name)
+                },
+                suggestion="Check play structure - scene may not exist in this edition",
+                action="Skip this scene or regenerate script with /analyze-plays"
+            )
+        else:
+            print_structured_error(
+                ErrorCode.VALIDATION_ERROR,
+                error_msg,
+                context={"scene": scene_label},
+                suggestion="Check the arguments are correct"
+            )
+        sys.exit(1)
+    except RuntimeError as e:
+        # API/backend failures
+        error_msg = str(e)
+        if "rate" in error_msg.lower() or "limit" in error_msg.lower():
+            print_structured_error(
+                ErrorCode.API_RATE_LIMIT,
+                error_msg,
+                context={"scene": scene_label},
+                suggestion="Wait a few minutes then retry, or increase --retry-delay",
+                action="Retry the scene (retries were exhausted)"
+            )
+        else:
+            print_structured_error(
+                ErrorCode.API_FAILURE,
+                error_msg,
+                context={"scene": scene_label},
+                suggestion="Check network connectivity and API status",
+                action="Retry the failed scene"
+            )
         sys.exit(1)
     except KeyboardInterrupt:
         print("\nInterrupted", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(130)  # Standard exit code for Ctrl+C
     except Exception as e:
         logger.exception("Unexpected error")
-        print(f"Error: {e}", file=sys.stderr)
+        print_structured_error(
+            ErrorCode.API_FAILURE,
+            str(e),
+            context={"scene": scene_label},
+            suggestion="Check log file for details",
+            action="Review error and retry"
+        )
         sys.exit(1)
 
 
