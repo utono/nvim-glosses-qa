@@ -84,7 +84,8 @@ Script template:
 
 PLAY="{full_path_to_play}"
 ANALYZER=~/utono/nvim-glosses-qa/python/scene_analyzer.py
-MERGE=15
+MERGE=42
+LOG_FILE=~/utono/nvim-glosses-qa/logs/scene_analyzer.log
 DRY_RUN=""
 
 # Check for --dry-run flag
@@ -93,9 +94,15 @@ if [ "$1" = "--dry-run" ] || [ "$1" = "-n" ]; then
     echo "=== DRY RUN MODE ==="
 fi
 
+# Clear log file at start of run
+mkdir -p "$(dirname "$LOG_FILE")"
+> "$LOG_FILE"
+echo "Log cleared: $LOG_FILE"
+
 echo "Analyzing {Play Name}..."
 echo "Play file: $PLAY"
 echo "Merge threshold: $MERGE lines"
+echo "Log file: $LOG_FILE"
 echo ""
 
 # Opening Prologue (if exists)
@@ -202,7 +209,8 @@ Shakespeare plays: `~/utono/literature/shakespeare-william/gutenberg/`
 ## Notes
 
 - Scripts are saved in `~/utono/nvim-glosses-qa/scripts/`
-- Merge threshold defaulted to 15 lines (can edit script to change)
+- Merge threshold defaulted to 42 lines (can edit script to change)
+- Log file: `~/utono/nvim-glosses-qa/logs/scene_analyzer.log` (cleared at script start)
 - Supports `--dry-run` flag to preview without API calls
 - Caching means reruns skip already-analyzed speeches
 - Wildcards expand at runtime, so `*.txt` matches all text files in directory

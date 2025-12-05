@@ -7,12 +7,13 @@
 # Structure discovered:
 #   - Opening Prologue: No
 #   - Acts: 1, 2, 3, 4, 5
-#   - Epilogue: Yes
-#   - Total output files: 23
+#   - Epilogue: No
+#   - Total output files: 22
 
 PLAY="/home/mlj/utono/literature/shakespeare-william/gutenberg/as_you_like_it_gut.txt"
 ANALYZER=~/utono/nvim-glosses-qa/python/scene_analyzer.py
-MERGE=15
+MERGE=42
+LOG_FILE=~/utono/nvim-glosses-qa/logs/scene_analyzer.log
 DRY_RUN=""
 
 # Check for --dry-run flag
@@ -21,9 +22,15 @@ if [ "$1" = "--dry-run" ] || [ "$1" = "-n" ]; then
     echo "=== DRY RUN MODE ==="
 fi
 
+# Clear log file at start of run
+mkdir -p "$(dirname "$LOG_FILE")"
+> "$LOG_FILE"
+echo "Log cleared: $LOG_FILE"
+
 echo "Analyzing As You Like It..."
 echo "Play file: $PLAY"
 echo "Merge threshold: $MERGE lines"
+echo "Log file: $LOG_FILE"
 echo ""
 
 # Act 1, Scene 1
@@ -113,10 +120,6 @@ python "$ANALYZER" "$PLAY" 5 3 --merge "$MERGE" $DRY_RUN
 # Act 5, Scene 4
 echo "--- Act 5, Scene 4 ---"
 python "$ANALYZER" "$PLAY" 5 4 --merge "$MERGE" $DRY_RUN
-
-# Epilogue (scene -1 triggers epilogue search)
-echo "--- Epilogue ---"
-python "$ANALYZER" "$PLAY" 0 -1 --merge "$MERGE" $DRY_RUN
 
 echo ""
 echo "=== Complete ==="

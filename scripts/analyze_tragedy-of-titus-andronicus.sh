@@ -6,13 +6,14 @@
 #
 # Structure discovered:
 #   - Opening Prologue: No
-#   - Acts: 1, 2, 3, 4, 5
+#   - Acts: 2, 3, 4, 5
 #   - Epilogue: No
-#   - Total output files: 14
+#   - Total output files: 13
 
 PLAY="/home/mlj/utono/literature/shakespeare-william/gutenberg/tragedy_of_titus_andronicus_gut.txt"
 ANALYZER=~/utono/nvim-glosses-qa/python/scene_analyzer.py
-MERGE=15
+MERGE=42
+LOG_FILE=~/utono/nvim-glosses-qa/logs/scene_analyzer.log
 DRY_RUN=""
 
 # Check for --dry-run flag
@@ -21,14 +22,16 @@ if [ "$1" = "--dry-run" ] || [ "$1" = "-n" ]; then
     echo "=== DRY RUN MODE ==="
 fi
 
+# Clear log file at start of run
+mkdir -p "$(dirname "$LOG_FILE")"
+> "$LOG_FILE"
+echo "Log cleared: $LOG_FILE"
+
 echo "Analyzing Tragedy Of Titus Andronicus..."
 echo "Play file: $PLAY"
 echo "Merge threshold: $MERGE lines"
+echo "Log file: $LOG_FILE"
 echo ""
-
-# Act 1, Scene 1
-echo "--- Act 1, Scene 1 ---"
-python "$ANALYZER" "$PLAY" 1 1 --merge "$MERGE" $DRY_RUN
 
 # Act 2, Scene 1
 echo "--- Act 2, Scene 1 ---"

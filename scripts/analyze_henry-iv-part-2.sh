@@ -8,11 +8,12 @@
 #   - Opening Prologue: No
 #   - Acts: 1, 2, 3, 4, 5
 #   - Epilogue: Yes
-#   - Total output files: 20
+#   - Total output files: 18
 
 PLAY="/home/mlj/utono/literature/shakespeare-william/gutenberg/henry_iv_part_2_gut.txt"
 ANALYZER=~/utono/nvim-glosses-qa/python/scene_analyzer.py
-MERGE=15
+MERGE=42
+LOG_FILE=~/utono/nvim-glosses-qa/logs/scene_analyzer.log
 DRY_RUN=""
 
 # Check for --dry-run flag
@@ -21,14 +22,16 @@ if [ "$1" = "--dry-run" ] || [ "$1" = "-n" ]; then
     echo "=== DRY RUN MODE ==="
 fi
 
+# Clear log file at start of run
+mkdir -p "$(dirname "$LOG_FILE")"
+> "$LOG_FILE"
+echo "Log cleared: $LOG_FILE"
+
 echo "Analyzing Henry Iv Part 2..."
 echo "Play file: $PLAY"
 echo "Merge threshold: $MERGE lines"
+echo "Log file: $LOG_FILE"
 echo ""
-
-# Act 1, Scene 1
-echo "--- Act 1, Scene 1 ---"
-python "$ANALYZER" "$PLAY" 1 1 --merge "$MERGE" $DRY_RUN
 
 # Act 1, Scene 2
 echo "--- Act 1, Scene 2 ---"
@@ -82,10 +85,6 @@ python "$ANALYZER" "$PLAY" 4 4 --merge "$MERGE" $DRY_RUN
 echo "--- Act 4, Scene 5 ---"
 python "$ANALYZER" "$PLAY" 4 5 --merge "$MERGE" $DRY_RUN
 
-# Act 5, Scene 1
-echo "--- Act 5, Scene 1 ---"
-python "$ANALYZER" "$PLAY" 5 1 --merge "$MERGE" $DRY_RUN
-
 # Act 5, Scene 2
 echo "--- Act 5, Scene 2 ---"
 python "$ANALYZER" "$PLAY" 5 2 --merge "$MERGE" $DRY_RUN
@@ -102,9 +101,9 @@ python "$ANALYZER" "$PLAY" 5 4 --merge "$MERGE" $DRY_RUN
 echo "--- Act 5, Scene 5 ---"
 python "$ANALYZER" "$PLAY" 5 5 --merge "$MERGE" $DRY_RUN
 
-# Epilogue (scene -1 triggers epilogue search)
+# Epilogue (act 6, scene 0)
 echo "--- Epilogue ---"
-python "$ANALYZER" "$PLAY" 0 -1 --merge "$MERGE" $DRY_RUN
+python "$ANALYZER" "$PLAY" 6 0 --merge "$MERGE" $DRY_RUN
 
 echo ""
 echo "=== Complete ==="

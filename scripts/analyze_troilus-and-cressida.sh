@@ -5,14 +5,15 @@
 # Usage: ./analyze_troilus-and-cressida.sh [--dry-run]
 #
 # Structure discovered:
-#   - Opening Prologue: Yes
+#   - Opening Prologue: No
 #   - Acts: 1, 2, 3, 4, 5
 #   - Epilogue: No
-#   - Total output files: 25
+#   - Total output files: 0
 
 PLAY="/home/mlj/utono/literature/shakespeare-william/gutenberg/troilus_and_cressida_gut.txt"
 ANALYZER=~/utono/nvim-glosses-qa/python/scene_analyzer.py
-MERGE=15
+MERGE=42
+LOG_FILE=~/utono/nvim-glosses-qa/logs/scene_analyzer.log
 DRY_RUN=""
 
 # Check for --dry-run flag
@@ -21,110 +22,16 @@ if [ "$1" = "--dry-run" ] || [ "$1" = "-n" ]; then
     echo "=== DRY RUN MODE ==="
 fi
 
+# Clear log file at start of run
+mkdir -p "$(dirname "$LOG_FILE")"
+> "$LOG_FILE"
+echo "Log cleared: $LOG_FILE"
+
 echo "Analyzing Troilus And Cressida..."
 echo "Play file: $PLAY"
 echo "Merge threshold: $MERGE lines"
+echo "Log file: $LOG_FILE"
 echo ""
-
-# Opening Prologue (act 0, scene 0)
-echo "--- Prologue (Opening) ---"
-python "$ANALYZER" "$PLAY" 0 0 --merge "$MERGE" $DRY_RUN
-
-# Act 1, Scene 1
-echo "--- Act 1, Scene 1 ---"
-python "$ANALYZER" "$PLAY" 1 1 --merge "$MERGE" $DRY_RUN
-
-# Act 1, Scene 2
-echo "--- Act 1, Scene 2 ---"
-python "$ANALYZER" "$PLAY" 1 2 --merge "$MERGE" $DRY_RUN
-
-# Act 1, Scene 3
-echo "--- Act 1, Scene 3 ---"
-python "$ANALYZER" "$PLAY" 1 3 --merge "$MERGE" $DRY_RUN
-
-# Act 2, Scene 1
-echo "--- Act 2, Scene 1 ---"
-python "$ANALYZER" "$PLAY" 2 1 --merge "$MERGE" $DRY_RUN
-
-# Act 2, Scene 2
-echo "--- Act 2, Scene 2 ---"
-python "$ANALYZER" "$PLAY" 2 2 --merge "$MERGE" $DRY_RUN
-
-# Act 2, Scene 3
-echo "--- Act 2, Scene 3 ---"
-python "$ANALYZER" "$PLAY" 2 3 --merge "$MERGE" $DRY_RUN
-
-# Act 3, Scene 1
-echo "--- Act 3, Scene 1 ---"
-python "$ANALYZER" "$PLAY" 3 1 --merge "$MERGE" $DRY_RUN
-
-# Act 3, Scene 2
-echo "--- Act 3, Scene 2 ---"
-python "$ANALYZER" "$PLAY" 3 2 --merge "$MERGE" $DRY_RUN
-
-# Act 3, Scene 3
-echo "--- Act 3, Scene 3 ---"
-python "$ANALYZER" "$PLAY" 3 3 --merge "$MERGE" $DRY_RUN
-
-# Act 4, Scene 1
-echo "--- Act 4, Scene 1 ---"
-python "$ANALYZER" "$PLAY" 4 1 --merge "$MERGE" $DRY_RUN
-
-# Act 4, Scene 2
-echo "--- Act 4, Scene 2 ---"
-python "$ANALYZER" "$PLAY" 4 2 --merge "$MERGE" $DRY_RUN
-
-# Act 4, Scene 3
-echo "--- Act 4, Scene 3 ---"
-python "$ANALYZER" "$PLAY" 4 3 --merge "$MERGE" $DRY_RUN
-
-# Act 4, Scene 4
-echo "--- Act 4, Scene 4 ---"
-python "$ANALYZER" "$PLAY" 4 4 --merge "$MERGE" $DRY_RUN
-
-# Act 4, Scene 5
-echo "--- Act 4, Scene 5 ---"
-python "$ANALYZER" "$PLAY" 4 5 --merge "$MERGE" $DRY_RUN
-
-# Act 5, Scene 1
-echo "--- Act 5, Scene 1 ---"
-python "$ANALYZER" "$PLAY" 5 1 --merge "$MERGE" $DRY_RUN
-
-# Act 5, Scene 2
-echo "--- Act 5, Scene 2 ---"
-python "$ANALYZER" "$PLAY" 5 2 --merge "$MERGE" $DRY_RUN
-
-# Act 5, Scene 3
-echo "--- Act 5, Scene 3 ---"
-python "$ANALYZER" "$PLAY" 5 3 --merge "$MERGE" $DRY_RUN
-
-# Act 5, Scene 4
-echo "--- Act 5, Scene 4 ---"
-python "$ANALYZER" "$PLAY" 5 4 --merge "$MERGE" $DRY_RUN
-
-# Act 5, Scene 5
-echo "--- Act 5, Scene 5 ---"
-python "$ANALYZER" "$PLAY" 5 5 --merge "$MERGE" $DRY_RUN
-
-# Act 5, Scene 6
-echo "--- Act 5, Scene 6 ---"
-python "$ANALYZER" "$PLAY" 5 6 --merge "$MERGE" $DRY_RUN
-
-# Act 5, Scene 7
-echo "--- Act 5, Scene 7 ---"
-python "$ANALYZER" "$PLAY" 5 7 --merge "$MERGE" $DRY_RUN
-
-# Act 5, Scene 8
-echo "--- Act 5, Scene 8 ---"
-python "$ANALYZER" "$PLAY" 5 8 --merge "$MERGE" $DRY_RUN
-
-# Act 5, Scene 9
-echo "--- Act 5, Scene 9 ---"
-python "$ANALYZER" "$PLAY" 5 9 --merge "$MERGE" $DRY_RUN
-
-# Act 5, Scene 10
-echo "--- Act 5, Scene 10 ---"
-python "$ANALYZER" "$PLAY" 5 10 --merge "$MERGE" $DRY_RUN
 
 echo ""
 echo "=== Complete ==="

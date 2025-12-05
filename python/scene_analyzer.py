@@ -15,6 +15,7 @@ Environment:
 """
 
 import argparse
+import logging
 import os
 import re
 import sys
@@ -32,12 +33,32 @@ from gloss import (
     GlossDatabase,
     PromptBuilder,
     create_backend,
-    setup_logging,
     preprocess_text,
 )
 from gloss.config import GLOSSES_DIR, DEFAULT_BACKEND
 
-logger = setup_logging()
+# Scene analyzer log file
+LOG_DIR = Path.home() / "utono" / "nvim-glosses-qa" / "logs"
+LOG_FILE = LOG_DIR / "scene_analyzer.log"
+
+
+def setup_scene_logging() -> logging.Logger:
+    """Set up logging for scene analyzer with dedicated log file."""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(LOG_FILE),
+            logging.StreamHandler(sys.stderr)
+        ]
+    )
+
+    return logging.getLogger('scene_analyzer')
+
+
+logger = setup_scene_logging()
 
 
 @dataclass
