@@ -11,7 +11,9 @@ in the database and aggregated into markdown files organized by play.
 ## Files
 
 - **CLI Script**: `~/utono/nvim-glosses-qa/python/scene_analyzer.py`
-- **Slash Command**: `~/.config/nvim-glosses-qa/.claude/commands/scene.md`
+- **Slash Commands**:
+  - `~/utono/nvim-glosses-qa/.claude/commands/scene.md` - Single scene
+  - `~/utono/nvim-glosses-qa/.claude/commands/analyze-plays.md` - Full plays
 
 ## Output Structure
 
@@ -448,46 +450,50 @@ In Claude Code with nvim-glosses-qa config:
 /scene henry_v_gut.txt 4 7 --dry-run
 ```
 
-### `/analyze-play` - Generate Full-Play Analysis Script
+### `/analyze-plays` - Generate Full-Play Analysis Scripts
 
-Automatically discovers the structure of a Shakespeare play and generates a
-tailored shell script to analyze all acts, scenes, prologues, and epilogues.
+Automatically discovers the structure of one or more Shakespeare plays and
+generates tailored shell scripts to analyze all acts, scenes, prologues, and
+epilogues. Supports wildcards for batch processing.
 
 **Usage:**
 
 ```
-/analyze-play ~/utono/literature/shakespeare-william/gutenberg/henry_v_gut.txt
-/analyze-play ~/utono/literature/shakespeare-william/gutenberg/hamlet_gut.txt
+# Single play
+/analyze-plays ~/utono/literature/shakespeare-william/gutenberg/henry_v_gut.txt
+
+# Multiple plays with wildcard
+/analyze-plays ~/utono/literature/shakespeare-william/gutenberg/*.txt
+
+# Specific plays
+/analyze-plays ~/utono/.../hamlet_gut.txt ~/utono/.../macbeth_gut.txt
 ```
 
 **What it does:**
 
-1. Reads the play file and identifies all structural markers
-2. Detects opening prologues, act prologues, scenes, and epilogues
-3. Generates a custom shell script for that specific play
-4. Saves the script to `~/utono/nvim-glosses-qa/scripts/analyze_{play}.sh`
+1. Expands wildcards to find all matching .txt files
+2. Reads each play file and identifies all structural markers
+3. Detects opening prologues, act prologues, scenes, and epilogues
+4. Generates a custom shell script for each play
+5. Saves scripts to `~/utono/nvim-glosses-qa/scripts/analyze_{play}.sh`
 
-**Example output for Henry V:**
+**Example output for multiple plays:**
 
 ```
-## Play Structure: Henry V
+## Plays Analyzed: 3 files processed
 
-| Act | Content |
-|-----|---------|
-| - | Opening Prologue |
-| 1 | 2 scenes |
-| 2 | Prologue + 4 scenes |
-| 3 | Prologue + 7 scenes |
-| 4 | Prologue + 8 scenes |
-| 5 | Prologue + 2 scenes |
-| - | Epilogue |
+| Play | Acts | Scenes | Prologues | Epilogue | Files | Script |
+|------|------|--------|-----------|----------|-------|--------|
+| Henry V | 5 | 23 | 6 | Yes | 28 | analyze_henry-v.sh |
+| Hamlet | 5 | 20 | 0 | No | 20 | analyze_hamlet.sh |
+| Macbeth | 5 | 28 | 0 | No | 28 | analyze_macbeth.sh |
 
-**Total output files:** 28
+**Total output files across all plays:** 76
 
-Script saved to: ~/utono/nvim-glosses-qa/scripts/analyze_henry-v.sh
+Scripts saved to: ~/utono/nvim-glosses-qa/scripts/
 ```
 
-**Running the generated script:**
+**Running the generated scripts:**
 
 ```bash
 # Preview what will be processed (recommended first)
@@ -495,11 +501,17 @@ Script saved to: ~/utono/nvim-glosses-qa/scripts/analyze_henry-v.sh
 
 # Run the full analysis
 ~/utono/nvim-glosses-qa/scripts/analyze_henry-v.sh
+
+# Run all generated scripts
+for script in ~/utono/nvim-glosses-qa/scripts/analyze_*.sh; do
+    "$script" --dry-run
+done
 ```
 
 **Benefits over manual scripting:**
 
 - Automatically handles plays with different structures
+- Batch process entire collections with wildcards
 - Detects prologues that appear before acts vs. between acts
 - Correctly identifies epilogues
 - Generates accurate scene counts per act

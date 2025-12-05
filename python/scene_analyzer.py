@@ -49,6 +49,9 @@ class Speech:
     line_start: int  # Line number in source file
     line_end: int
 
+    # Pattern for stage directions
+    STAGE_DIR_RE = re.compile(r'^\[.*\]\s*$')
+
     @property
     def hash(self) -> str:
         """Generate hash for this speech."""
@@ -58,6 +61,20 @@ class Speech:
     def line_count(self) -> int:
         """Number of dialogue lines (excluding speaker name)."""
         return len(self.lines)
+
+    @property
+    def has_dialogue(self) -> bool:
+        """Check if speech contains actual dialogue (not just stage directions)."""
+        for line in self.lines:
+            stripped = line.strip()
+            # Skip empty lines and stage directions
+            if not stripped:
+                continue
+            if self.STAGE_DIR_RE.match(stripped):
+                continue
+            # Found actual dialogue
+            return True
+        return False
 
 
 @dataclass
@@ -89,19 +106,20 @@ class PlayParser:
     """Parse a play file to extract scenes and speeches."""
 
     # Patterns for play structure
-    # ACT pattern matches both Roman numerals (ACT IV.) and ordinal words (ACT FIRST.)
+    # ACT pattern matches Roman numerals (ACT IV.), Arabic (ACT 1.), and words (ACT FIRST.)
     ACT_PATTERN = re.compile(
-        r'^ACT\s+([IVX]+|FIRST|SECOND|THIRD|FOURTH|FIFTH)\.\s*$',
+        r'^ACT\s+([IVX]+|\d+|FIRST|SECOND|THIRD|FOURTH|FIFTH)\.?\s*$',
         re.IGNORECASE
     )
-    SCENE_PATTERN = re.compile(r'^SCENE\s+([IVX]+)\.\s*(.*)$', re.IGNORECASE)
+    # SCENE pattern matches both Roman (SCENE I.) and Arabic (SCENE 1.)
+    SCENE_PATTERN = re.compile(r'^SCENE\s+([IVX]+|\d+)[\.\s:](.*)$', re.IGNORECASE)
     # Combined ACT + SCENE on same line (e.g., "ACT IV. SCENE I. Location.")
     ACT_SCENE_COMBINED_PATTERN = re.compile(
-        r'^ACT\s+([IVX]+|FIRST|SECOND|THIRD|FOURTH|FIFTH)\.\s*SCENE\s+([IVX]+)\.\s*(.*)$',
+        r'^ACT\s+([IVX]+|\d+|FIRST|SECOND|THIRD|FOURTH|FIFTH)\.?\s*SCENE\s+([IVX]+|\d+)[\.\s:](.*)$',
         re.IGNORECASE
     )
-    PROLOGUE_PATTERN = re.compile(r'^PROLOGUE\.\s*$', re.IGNORECASE)
-    EPILOGUE_PATTERN = re.compile(r'^EPILOGUE\.\s*$', re.IGNORECASE)
+    PROLOGUE_PATTERN = re.compile(r'^PROLOGUE\.?\s*$', re.IGNORECASE)
+    EPILOGUE_PATTERN = re.compile(r'^EPILOGUE\.?\s*$', re.IGNORECASE)
     SPEAKER_PATTERN = re.compile(r'^([A-Z][A-Z\s]+)\.\s*$')
     STAGE_DIR_PATTERN = re.compile(r'^\[.*\]\s*$')
 
@@ -151,18 +169,35 @@ class PlayParser:
         return result
 
     def _normalize_act(self, act_str: str) -> int:
-        """Normalize act string (Roman numeral or ordinal word) to integer.
+        """Normalize act string (Roman numeral, Arabic numeral, or ordinal word) to integer.
 
         Args:
-            act_str: Act identifier like 'III', 'FIRST', 'IV', etc.
+            act_str: Act identifier like 'III', '3', 'FIRST', 'IV', etc.
 
         Returns:
             Integer act number.
         """
-        act_upper = act_str.upper()
+        act_upper = act_str.upper().strip()
         if act_upper in self.ORDINAL_TO_INT:
             return self.ORDINAL_TO_INT[act_upper]
+        # Try Arabic numeral first
+        if act_upper.isdigit():
+            return int(act_upper)
         return self._roman_to_int(act_upper)
+
+    def _normalize_scene(self, scene_str: str) -> int:
+        """Normalize scene string (Roman or Arabic numeral) to integer.
+
+        Args:
+            scene_str: Scene identifier like 'III', '3', 'IV', etc.
+
+        Returns:
+            Integer scene number.
+        """
+        scene_str = scene_str.strip()
+        if scene_str.isdigit():
+            return int(scene_str)
+        return self._roman_to_int(scene_str)
 
     def find_scene(self, act: int, scene: int) -> tuple[int, int]:
         """Find the start and end line numbers for a scene.
@@ -198,7 +233,7 @@ class PlayParser:
             combined_match = self.ACT_SCENE_COMBINED_PATTERN.match(stripped)
             if combined_match:
                 line_act = self._normalize_act(combined_match.group(1))
-                line_scene = self._roman_to_int(combined_match.group(2))
+                line_scene = self._normalize_scene(combined_match.group(2))
 
                 # If we already found our scene, this marks the end
                 if scene_start is not None:
@@ -221,7 +256,7 @@ class PlayParser:
             # Check for scene header (standalone)
             scene_match = self.SCENE_PATTERN.match(stripped)
             if scene_match:
-                scene_num = self._roman_to_int(scene_match.group(1))
+                scene_num = self._normalize_scene(scene_match.group(1))
 
                 # If we already found our scene, this marks the end
                 if scene_start is not None:
@@ -389,6 +424,9 @@ class PlayParser:
                 line_end=end_line
             ))
 
+        # Filter out speeches with no actual dialogue (only stage directions)
+        speeches = [s for s in speeches if s.has_dialogue]
+
         return speeches
 
 
@@ -512,8 +550,12 @@ class SceneAnalyzer:
         prompt = prompt_builder.build_line_by_line_prompt()
         raw_analysis = self.backend.generate(prompt)
 
-        # Prepend speaker name (uppercase with period) before analysis
-        analysis = f"{speech.speaker.upper()}.\n\n{raw_analysis}"
+        # Prepend speaker name only if not already present in the analysis
+        speaker_prefix = f"{speech.speaker.upper()}."
+        if raw_analysis.lstrip().startswith(speaker_prefix):
+            analysis = raw_analysis
+        else:
+            analysis = f"{speaker_prefix}\n\n{raw_analysis}"
 
         # Save to database
         metadata = self._get_metadata(speech)
@@ -558,11 +600,15 @@ class SceneAnalyzer:
         prompt = prompt_builder.build_line_by_line_prompt()
         raw_analysis = self.backend.generate(prompt)
 
-        # For single-speech chunks, prepend the speaker name
+        # For single-speech chunks, prepend the speaker name only if not present
         # For multi-speech chunks, the raw analysis handles speaker names
         # since the input text includes them before each speech
         if len(chunk.speeches) == 1:
-            analysis = f"{chunk.speeches[0].speaker.upper()}.\n\n{raw_analysis}"
+            speaker_prefix = f"{chunk.speeches[0].speaker.upper()}."
+            if raw_analysis.lstrip().startswith(speaker_prefix):
+                analysis = raw_analysis
+            else:
+                analysis = f"{speaker_prefix}\n\n{raw_analysis}"
         else:
             analysis = raw_analysis
 
@@ -703,6 +749,13 @@ class SceneAnalyzer:
         # Extract speeches
         speeches = self.parser.extract_speeches(start_line, end_line)
         logger.info(f"Found {len(speeches)} speeches")
+
+        # Skip if no dialogue found (only stage directions)
+        if not speeches:
+            logger.info("No dialogue found in this section, skipping")
+            if dry_run:
+                print(f"\nSkipping: No dialogue found (only stage directions)")
+            return None
 
         # Merge into chunks if threshold is set
         chunks = self._merge_speeches_into_chunks(speeches)
