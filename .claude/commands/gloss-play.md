@@ -22,8 +22,8 @@ This command processes scene chunks **directly in the current Claude Code
 session** - no external API calls are made. The workflow:
 
 1. Run `scene_analyzer.py --export-chunks` to get chunk data as JSON
-2. For each non-cached chunk, generate line-by-line analysis directly
-3. Save results to database and write the output markdown file
+2. For each non-cached chunk: generate analysis, then save with `--save-chunk`
+3. Run `scene_analyzer.py --build-from-cache` to build the markdown file
 
 ## Steps to Execute
 
@@ -59,16 +59,21 @@ This outputs JSON with:
 
 For each chunk in the JSON:
 
-**If `cached` is true:** Use the `cached_text` directly.
+**If `cached` is true:** Skip - already in database.
 
-**If `cached` is false:** Generate the line-by-line analysis.
+**If `cached` is false:** Generate analysis, then save to database.
 
-#### Line-by-Line Analysis Instructions
+---
 
-For each non-cached chunk, perform a line-by-line close reading for actor
-rehearsal. Work through the original text one line at a time.
+## Line-by-Line Analysis Prompt
 
-**For each line, provide in flowing prose:**
+Perform a line-by-line close reading for actor rehearsal. Work through the
+**original text** one line at a time, helping the actor understand, embody,
+and speak each line.
+
+### Structure for Each Line
+
+For each line, provide in flowing prose:
 
 1. The line itself quoted in **bold**
 2. What it literally means (1-2 sentences)
@@ -79,23 +84,146 @@ rehearsal. Work through the original text one line at a time.
 **Do NOT number lines** like "LINE 1:", "LINE 2:".
 Write each analysis as a cohesive paragraph.
 
-**Format Example:**
+### Elevated Style Requirements
+
+The goal is theatrical, evocative analysis — not flat translation. Each gloss
+should feel like a director's note that helps an actor embody the line.
+
+**1. Vivid Paraphrase**
+Don't just translate — capture the energy:
+- FLAT: "England's youth are excited about war"
+- ELEVATED: "England's young men burn with martial energy"
+
+**2. Operative Words Explained**
+Don't just identify — explain WHY the word lands:
+- WEAK: "'Fire' is the operative word"
+- STRONG: "The operative word is 'fire' — not merely eager, but aflame
+  with passion for war"
+
+**3. Specific Acting Direction**
+Give physical, vocal, and energy notes:
+- "Let the vowel open the speech"
+- "Weight 'all' to paint the totality"
+- "The line must kindle that heat in the room"
+- "Make the shift visible — the world contracts to these two"
+
+**4. Structural Insights Integrated**
+Note rhetorical features as acting challenges:
+- "The enjambment suspends 'three' — the number hangs, incomplete"
+- "The dash pivots sharply from intimacy to logistics"
+- "The antithesis is implicit: fire vs. silk, war vs. play"
+
+**5. Audience Awareness**
+Connect to theatrical effect:
+- "Let the audience see him not seeing"
+- "Let it hang in the air"
+- "The audience knows what Orsino cannot"
+
+**6. Physical/Spatial Awareness**
+Ground abstract language in the body and stage:
+- "Let 'wardrobe' be physical — we see the chest closing"
+- "The shift must be physical — Viola's body changes"
+
+**7. Immediate Dramatic Context**
+Name what the character is DOING, not just saying:
+- "This is benediction — Romeo blessing Juliet as he watches her sleep"
+- "Romeo speaks as priest and lover simultaneously"
+
+**8. Double Meanings and Wordplay**
+Note when words carry multiple meanings:
+- "'So sweet to rest' lands with double meaning: rest sweetly AND rest
+  with her"
+- "'Admit' works doubly: allow entry and accept emotionally"
+
+**9. Foreshadowing and Shadows**
+When words carry weight beyond their immediate meaning:
+- "'Ghostly' means spiritual (the Friar is his confessor), but the word
+  carries death's shadow"
+- "The audience knows what Orsino cannot"
+
+**10. Character Shifts Within Speech**
+Note when the character's role or energy changes:
+- "He's a supplicant now, not a lover-priest"
+- "The line turns inward — he's no longer blessing her, he's mourning
+  his separation"
+- "Romeo moves from lyric contemplation to plot mechanics"
+
+**11. Etymology When Enriching**
+Period-specific meanings that deepen understanding:
+- "'Dear hap' is stunning compression: 'hap' (fortune, chance) modified
+  by 'dear' (precious, costly)"
+- "'Nuncio' — papal envoy, formal diplomat"
+
+**12. Structural Pivots**
+Note when form signals meaning:
+- "The rhyming couplet snaps the speech shut"
+- "The syntax is inverted — 'will I to' instead of 'I will go to' —
+  giving the line formality, perhaps self-discipline"
+
+### Format Example
 
 ```
-**"What infinite heart's ease must kings neglect"**
+**"Now all the youth of England are on fire"**
 
-What limitless peace of mind kings must give up. The operative word
-is "neglect" - not "lose" but actively ignore, sacrifice. The question
-is bitter, not curious. Henry already knows the answer. Weight on
-"infinite" - the loss is measureless.
+England's young men burn with martial energy. The operative word is
+"fire" — not merely eager, but aflame with passion for war. The
+Chorus speaks with rising excitement, inviting the audience into
+this fever. The line must kindle that heat in the room. Weight "all"
+to paint the totality of this transformation.
 
-**"That private men enjoy?"**
+**"And silken dalliance in the wardrobe lies"**
 
-That ordinary people have freely. "Private" is the word Henry envies;
-"enjoy" lands the contrast. The comparison is complete. "Private men"
-isn't contemptuous - it's wistful. These are the people Henry wishes
-he could be.
+Soft peacetime pleasures are packed away like silk clothing.
+"Dalliance" is the key — courtship, flirtation, leisure all
+abandoned. "Lies" completes the thought: these things are dormant,
+not destroyed. The antithesis is implicit: fire vs. silk, war vs.
+play. Let "wardrobe" be physical — we see the chest closing.
 ```
+
+### Format Example 2: Romeo and Juliet
+
+```
+ROMEO.
+
+**"Sleep dwell upon thine eyes peace in thy breast!"**
+
+May sleep rest on your eyes, peace fill your heart. This is
+benediction — Romeo blessing Juliet as he watches her sleep. The
+operative words are "dwell" and "peace" — not fleeting rest but
+permanent residence. The syntax is compressed, almost liturgical:
+no comma between "eyes" and "peace" creates rhythmic urgency.
+Romeo speaks as priest and lover simultaneously.
+
+**"Would I were sleep and peace so sweet to rest!"**
+
+I wish I could be that sleep and peace, so I could rest as sweetly
+with you. "Would I were" carries the operative weight — subjunctive
+longing, impossible wish. Romeo wants to dissolve into the
+abstractions he just invoked. "So sweet to rest" lands with double
+meaning: rest sweetly AND rest with her. The line turns inward —
+he's no longer blessing her, he's mourning his separation.
+
+**"Hence will I to my ghostly father's cell"**
+
+From here I'll go to my spiritual father's room. "Hence" is the
+operative — departure, movement away from Juliet. "Ghostly" means
+spiritual (the Friar is his confessor), but the word carries
+death's shadow. The syntax is inverted — "will I to" instead of
+"I will go to" — giving the line formality, perhaps self-discipline.
+Romeo is pulling himself away from reverie into action.
+
+**"His help to crave and my dear hap to tell."**
+
+To beg his help and tell him my precious good fortune. The operative
+words are "crave" and "hap" — he's a supplicant now, not a lover-
+priest. "Dear hap" is stunning compression: "hap" (fortune, chance)
+modified by "dear" (precious, costly). The rhyming couplet snaps the
+speech shut — Romeo moves from lyric contemplation to plot mechanics.
+The actor must shift energy: from communion with sleeping Juliet to
+forward momentum toward the Friar.
+```
+
+### Guidance
 
 **Use practitioner vocabulary:**
 - "Operative word" (Barton) - the word that carries the argument
@@ -110,78 +238,69 @@ he could be.
 - Periodic structure (meaning delayed to line end)
 - Inverted syntax (verb before subject)
 
+**Connect to character psychology:**
+- Why does the character choose THESE words?
+- What does the syntax reveal about their mental state?
+- Where is the character thinking vs. performing?
+
+### Critical Requirements
+
+- Complete ALL lines in the chunk
+- Output ONLY the line-by-line analyses
+- Do NOT add preamble like "I'll work through..." or "Let me analyze..."
+- Do NOT add closing remarks like "That's the full passage..."
+- Do NOT offer follow-up questions
+- Do NOT use --- or separators between line analyses
+- Begin IMMEDIATELY with the first line in bold
+
 **SPEAKER ATTRIBUTION:**
 If the chunk contains multiple speakers (names in ALL CAPS followed by a
 period), include the speaker name in ALL CAPS on its own line BEFORE
-analyzing that character's lines.
+analyzing that character's lines. Example:
 
-### Step 4: Save results to database
+```
+CANTERBURY.
 
-After generating analysis for a chunk, save it to the database:
+**"Hear him but reason in divinity"**
+[analysis...]
+
+ELY.
+
+**"It would be all in all to him"**
+[analysis...]
+```
+
+---
+
+### Step 4: Save chunk to database
+
+After generating analysis for a chunk, save it using `--save-chunk`:
 
 ```bash
-python3 << 'EOF'
-import sys
-sys.path.insert(0, str(__import__('pathlib').Path.home() / 'utono/xc/nvim/python'))
-from gloss import GlossDatabase
-
-db = GlossDatabase()
-db.setup()
-
-chunk_hash = "<CHUNK_HASH>"
-chunk_text = """<CHUNK_TEXT>"""
-analysis = """<ANALYSIS_TEXT>"""
-
-# Create passage record
-metadata = {
-    'play_name': '<PLAY_NAME>',
-    'act': '<ACT>',
-    'scene': '<SCENE>',
-}
-db.get_or_create_passage(chunk_hash, chunk_text, metadata)
-
-# Save as line-by-line gloss
-filename = f"{chunk_hash[:8]}_chunk_line-by-line.md"
-db.save(chunk_hash, chunk_text, analysis, filename, 'line-by-line', metadata)
-
-# Save to addenda
-db.save_addendum(chunk_hash, "Line-by-line analysis", analysis)
-print(f"Saved chunk {chunk_hash[:8]}")
-EOF
+cat << 'CHUNK_EOF' | python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
+    "<play-file>" "<act/scene-spec>" --merge 42 --save-chunk <CHUNK_HASH>
+<ANALYSIS_TEXT>
+CHUNK_EOF
 ```
 
-### Step 5: Build output markdown
+The script reads the analysis from stdin and saves it to the database.
 
-After processing all chunks, build the scene document:
+**Workflow per chunk:**
+1. Generate analysis for chunk
+2. Pipe analysis to `--save-chunk` with the chunk's hash
+3. Verify "Saved chunk XXXXXXXX" output
+4. Proceed to next chunk
 
-```markdown
-# <Play Name>
-## Act <N>, Scene <M>
+### Step 5: Build markdown from cache
 
-*<Scene Header>*
+After ALL chunks are saved, build the markdown file:
 
----
-
-### 1. <Speaker Name>
-
-#### Original Text
-```
-<chunk text>
+```bash
+python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
+    "<play-file>" "<act/scene-spec>" --merge 42 --build-from-cache
 ```
 
-#### Line-by-Line Analysis
-
-<analysis>
-
----
-
-[repeat for each chunk]
-
-*Generated: <timestamp>*
-*Source: <play_file>*
-```
-
-Write to: `<output_dir>/<output_filename>`
+This verifies all chunks are cached and builds the output markdown.
 
 ### Step 6: Report results
 
@@ -198,12 +317,16 @@ After completion:
 
 `~/utono/literature/glosses/<play-name>/act<N>_scene<M>_line-by-line.md`
 
-## Flags (for --export-chunks only)
+## Command Reference
 
 | Flag | Purpose |
 |------|---------|
+| `--export-chunks` | Export chunk data as JSON (no API calls) |
+| `--save-chunk HASH` | Save analysis for chunk (reads from stdin) |
+| `--build-from-cache` | Build markdown from all cached chunks |
 | `--dry-run` | Preview chunks without processing |
 | `--status` | Show cache status only |
+| `--merge N` | Merge speeches into N-line chunks |
 
 ## Examples
 

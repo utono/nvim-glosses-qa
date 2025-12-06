@@ -12,7 +12,7 @@ in the database and aggregated into markdown files organized by play.
 
 - **CLI Script**: `~/utono/nvim-glosses-qa/python/scene_analyzer.py`
 - **Slash Commands**:
-  - `~/utono/nvim-glosses-qa/.claude/commands/scene.md` - Single scene
+  - `~/utono/nvim-glosses-qa/.claude/commands/gloss-play.md` - Single scene
   - `~/utono/nvim-glosses-qa/.claude/commands/analyze-plays.md` - Full plays
 
 ## Output Structure
@@ -34,9 +34,75 @@ in the database and aggregated into markdown files organized by play.
     └── ...
 ```
 
-## Usage
+## Usage Modes
 
-### Basic Usage
+The script supports multiple modes of operation:
+
+### 1. Direct Mode (with API)
+
+Processes scenes using the Claude API directly:
+
+```bash
+python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
+    ~/utono/literature/shakespeare-william/gutenberg/henry_v_gut.txt \
+    "Act IV, Scene VII" --merge 42
+```
+
+### 2. Export Mode (for Claude Code sessions)
+
+Exports chunk data as JSON for processing by Claude Code directly:
+
+```bash
+python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
+    play.txt "Act IV, Scene VII" --merge 42 --export-chunks
+```
+
+### 3. Save Chunk Mode
+
+Saves a single chunk's analysis to the database (reads from stdin):
+
+```bash
+echo "analysis text..." | python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
+    play.txt "Act IV, Scene VII" --merge 42 --save-chunk <HASH>
+```
+
+### 4. Build from Cache Mode
+
+Builds the markdown file from all cached analyses:
+
+```bash
+python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
+    play.txt "Act IV, Scene VII" --merge 42 --build-from-cache
+```
+
+## Claude Code Slash Command Workflow
+
+The `/gloss-play` slash command uses a three-step workflow:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  1. Export chunks (--export-chunks)                             │
+│     → Returns JSON with chunk text and cache status             │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  2. For each non-cached chunk:                                  │
+│     a) Claude generates line-by-line analysis                   │
+│     b) Save with: echo "analysis" | ... --save-chunk <HASH>     │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  3. Build markdown (--build-from-cache)                         │
+│     → Verifies all chunks cached, writes output file            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+This approach:
+- Avoids external API calls (analysis happens in Claude Code session)
+- Ensures all analyses are saved to the database
+- Separates concerns: Python handles DB/files, Claude handles analysis
+
+## Basic Usage
 
 ```bash
 # Using "Act N, Scene M" format (from <M-a> clipboard)
@@ -85,13 +151,13 @@ python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
 ### Merge Small Speeches (Recommended)
 
 ```bash
-# Merge speeches into chunks of ~15 lines (reduces Claude Code calls)
+# Merge speeches into chunks of ~42 lines (reduces Claude Code calls)
 python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
     ~/utono/literature/shakespeare-william/gutenberg/henry_v_gut.txt \
-    "Act IV, Scene VII" --merge 15
+    "Act IV, Scene VII" --merge 42
 ```
 
-Example: Act 4, Scene 7 of Henry V has 53 speeches. With `--merge 15`, this
+Example: Act 4, Scene 7 of Henry V has 53 speeches. With `--merge 42`, this
 becomes ~10 chunks - reducing Claude Code calls by ~80%.
 
 **Note:** Speeches are never split across chunks. Each character's dialogue
@@ -109,9 +175,15 @@ threshold. A speech longer than the threshold becomes its own chunk.
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--dry-run` | `-n` | Preview without calling Claude Code |
-| `--merge N` | `-m N` | Merge speeches into ~N-line chunks (never splits) |
-| `--backend` | `-b` | `api` or `claude-code` (default: claude-code) |
+| `--status` | `-s` | Show cache status (exit 0=cached, 1=work needed) |
+| `--merge N` | `-m N` | Merge speeches into ~N-line chunks |
+| `--validate` | `-v` | Check if scene exists (exit 0=found, 1=not found) |
+| `--export-chunks` | | Export chunk data as JSON (no API calls) |
+| `--save-chunk HASH` | | Save analysis for chunk (reads from stdin) |
+| `--build-from-cache` | | Build markdown from cached analyses |
 | `--output-dir` | `-o` | Override output directory |
+| `--retry N` | `-r N` | Retry failed API calls N times (default: 3) |
+| `--retry-delay SEC` | | Initial retry delay in seconds (default: 30) |
 
 ## Analyzing the Entirety of Henry V
 
@@ -137,7 +209,7 @@ an **Epilogue**. The complete structure:
 
 PLAY=~/utono/literature/shakespeare-william/gutenberg/henry_v_gut.txt
 ANALYZER=~/utono/nvim-glosses-qa/python/scene_analyzer.py
-MERGE=15
+MERGE=42
 DRY_RUN=""
 
 # Check for --dry-run flag
@@ -213,17 +285,17 @@ echo "Output directory: ~/utono/literature/glosses/henry-v/"
 # Analyze ALL of Henry V (prologues + all scenes + epilogue)
 PLAY=~/utono/literature/shakespeare-william/gutenberg/henry_v_gut.txt && \
 ANALYZER=~/utono/nvim-glosses-qa/python/scene_analyzer.py && \
-python "$ANALYZER" "$PLAY" 0 0 -m 15 && \
-for s in 1 2; do python "$ANALYZER" "$PLAY" 1 $s -m 15; done && \
-python "$ANALYZER" "$PLAY" 2 0 -m 15 && \
-for s in 1 2 3 4; do python "$ANALYZER" "$PLAY" 2 $s -m 15; done && \
-python "$ANALYZER" "$PLAY" 3 0 -m 15 && \
-for s in 1 2 3 4 5 6 7; do python "$ANALYZER" "$PLAY" 3 $s -m 15; done && \
-python "$ANALYZER" "$PLAY" 4 0 -m 15 && \
-for s in 1 2 3 4 5 6 7 8; do python "$ANALYZER" "$PLAY" 4 $s -m 15; done && \
-python "$ANALYZER" "$PLAY" 5 0 -m 15 && \
-for s in 1 2; do python "$ANALYZER" "$PLAY" 5 $s -m 15; done && \
-python "$ANALYZER" "$PLAY" 0 -1 -m 15
+python "$ANALYZER" "$PLAY" 0 0 -m 42 && \
+for s in 1 2; do python "$ANALYZER" "$PLAY" 1 $s -m 42; done && \
+python "$ANALYZER" "$PLAY" 2 0 -m 42 && \
+for s in 1 2 3 4; do python "$ANALYZER" "$PLAY" 2 $s -m 42; done && \
+python "$ANALYZER" "$PLAY" 3 0 -m 42 && \
+for s in 1 2 3 4 5 6 7; do python "$ANALYZER" "$PLAY" 3 $s -m 42; done && \
+python "$ANALYZER" "$PLAY" 4 0 -m 42 && \
+for s in 1 2 3 4 5 6 7 8; do python "$ANALYZER" "$PLAY" 4 $s -m 42; done && \
+python "$ANALYZER" "$PLAY" 5 0 -m 42 && \
+for s in 1 2; do python "$ANALYZER" "$PLAY" 5 $s -m 42; done && \
+python "$ANALYZER" "$PLAY" 0 -1 -m 42
 ```
 
 ### Dry Run First (Recommended)
@@ -239,7 +311,7 @@ python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
 # Preview a specific scene
 python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
     ~/utono/literature/shakespeare-william/gutenberg/henry_v_gut.txt \
-    4 7 --dry-run --merge 15
+    4 7 --dry-run --merge 42
 ```
 
 ### Scene-by-Scene Commands (Individual)
@@ -251,47 +323,47 @@ PLAY=~/utono/literature/shakespeare-william/gutenberg/henry_v_gut.txt
 ANALYZER=~/utono/nvim-glosses-qa/python/scene_analyzer.py
 
 # Opening Prologue
-python "$ANALYZER" "$PLAY" 0 0 -m 15
+python "$ANALYZER" "$PLAY" 0 0 -m 42
 
 # Act 1
-python "$ANALYZER" "$PLAY" 1 1 -m 15
-python "$ANALYZER" "$PLAY" 1 2 -m 15
+python "$ANALYZER" "$PLAY" 1 1 -m 42
+python "$ANALYZER" "$PLAY" 1 2 -m 42
 
 # Act 2
-python "$ANALYZER" "$PLAY" 2 0 -m 15   # Prologue
-python "$ANALYZER" "$PLAY" 2 1 -m 15
-python "$ANALYZER" "$PLAY" 2 2 -m 15
-python "$ANALYZER" "$PLAY" 2 3 -m 15
-python "$ANALYZER" "$PLAY" 2 4 -m 15
+python "$ANALYZER" "$PLAY" 2 0 -m 42   # Prologue
+python "$ANALYZER" "$PLAY" 2 1 -m 42
+python "$ANALYZER" "$PLAY" 2 2 -m 42
+python "$ANALYZER" "$PLAY" 2 3 -m 42
+python "$ANALYZER" "$PLAY" 2 4 -m 42
 
 # Act 3
-python "$ANALYZER" "$PLAY" 3 0 -m 15   # Prologue
-python "$ANALYZER" "$PLAY" 3 1 -m 15
-python "$ANALYZER" "$PLAY" 3 2 -m 15
-python "$ANALYZER" "$PLAY" 3 3 -m 15
-python "$ANALYZER" "$PLAY" 3 4 -m 15
-python "$ANALYZER" "$PLAY" 3 5 -m 15
-python "$ANALYZER" "$PLAY" 3 6 -m 15
-python "$ANALYZER" "$PLAY" 3 7 -m 15
+python "$ANALYZER" "$PLAY" 3 0 -m 42   # Prologue
+python "$ANALYZER" "$PLAY" 3 1 -m 42
+python "$ANALYZER" "$PLAY" 3 2 -m 42
+python "$ANALYZER" "$PLAY" 3 3 -m 42
+python "$ANALYZER" "$PLAY" 3 4 -m 42
+python "$ANALYZER" "$PLAY" 3 5 -m 42
+python "$ANALYZER" "$PLAY" 3 6 -m 42
+python "$ANALYZER" "$PLAY" 3 7 -m 42
 
 # Act 4
-python "$ANALYZER" "$PLAY" 4 0 -m 15   # Prologue
-python "$ANALYZER" "$PLAY" 4 1 -m 15
-python "$ANALYZER" "$PLAY" 4 2 -m 15
-python "$ANALYZER" "$PLAY" 4 3 -m 15
-python "$ANALYZER" "$PLAY" 4 4 -m 15
-python "$ANALYZER" "$PLAY" 4 5 -m 15
-python "$ANALYZER" "$PLAY" 4 6 -m 15
-python "$ANALYZER" "$PLAY" 4 7 -m 15
-python "$ANALYZER" "$PLAY" 4 8 -m 15
+python "$ANALYZER" "$PLAY" 4 0 -m 42   # Prologue
+python "$ANALYZER" "$PLAY" 4 1 -m 42
+python "$ANALYZER" "$PLAY" 4 2 -m 42
+python "$ANALYZER" "$PLAY" 4 3 -m 42
+python "$ANALYZER" "$PLAY" 4 4 -m 42
+python "$ANALYZER" "$PLAY" 4 5 -m 42
+python "$ANALYZER" "$PLAY" 4 6 -m 42
+python "$ANALYZER" "$PLAY" 4 7 -m 42
+python "$ANALYZER" "$PLAY" 4 8 -m 42
 
 # Act 5
-python "$ANALYZER" "$PLAY" 5 0 -m 15   # Prologue
-python "$ANALYZER" "$PLAY" 5 1 -m 15
-python "$ANALYZER" "$PLAY" 5 2 -m 15
+python "$ANALYZER" "$PLAY" 5 0 -m 42   # Prologue
+python "$ANALYZER" "$PLAY" 5 1 -m 42
+python "$ANALYZER" "$PLAY" 5 2 -m 42
 
 # Epilogue
-python "$ANALYZER" "$PLAY" 0 -1 -m 15
+python "$ANALYZER" "$PLAY" 0 -1 -m 42
 ```
 
 ### Expected Output Files
@@ -346,7 +418,7 @@ PLAY=~/utono/literature/shakespeare-william/gutenberg/henry_v_gut.txt
 for act in 1 2 3 4 5; do
     for scene in 1 2 3 4 5 6 7 8 9 10; do
         python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
-            "$PLAY" $act $scene --merge 15 2>/dev/null || true
+            "$PLAY" $act $scene --merge 42 2>/dev/null || true
     done
 done
 ```
@@ -360,7 +432,7 @@ Create `~/utono/nvim-glosses-qa/python/analyze_play.sh`:
 # Usage: ./analyze_play.sh <play_file>
 
 PLAY="$1"
-MERGE=15
+MERGE=42
 
 if [ -z "$PLAY" ]; then
     echo "Usage: $0 <play_file>"
@@ -405,7 +477,7 @@ The parser uses regex patterns to identify structural elements:
 | Scene markers | `^SCENE\s+[IVX]+\.\s*(.*)$` | "SCENE VII. Another..." |
 | Prologue | `^PROLOGUE\.\s*$` | "PROLOGUE." |
 | Epilogue | `^EPILOGUE\.\s*$` | "EPILOGUE." |
-| Speaker names | `^([A-Z][A-Z\s]+)\.\s*$` | "KING HENRY." |
+| Speaker names | `^([A-Z][A-Za-z\s]+)\.\s*$` | "KING HENRY." |
 | Stage directions | `^\[.*\]\s*$` | "[Exit]" |
 
 **Dialogue lines:** Everything after a speaker name that isn't a stage
@@ -440,15 +512,18 @@ Shakespeare plays (Gutenberg format):
 
 ## Slash Commands
 
-### `/scene` - Analyze a Single Scene
+### `/gloss-play` - Analyze a Single Scene
 
 In Claude Code with nvim-glosses-qa config:
 
 ```
-/scene henry_v_gut.txt 4 7
-/scene henry_v_gut.txt 4 7 --merge 15
-/scene henry_v_gut.txt 4 7 --dry-run
+/gloss-play twelfth-night "Act I, Scene V"
+/gloss-play henry-v "Act IV, Scene VII"
+/gloss-play ~/path/to/play.txt "Act III, Scene I"
 ```
+
+The slash command uses the three-step workflow (export → save → build) to
+process scenes without external API calls.
 
 ### `/analyze-plays` - Generate Full-Play Analysis Scripts
 
@@ -475,7 +550,7 @@ epilogues. Supports wildcards for batch processing.
 2. Reads each play file and identifies all structural markers
 3. Detects opening prologues, act prologues, scenes, and epilogues
 4. Generates a custom shell script for each play
-5. Saves scripts to `~/utono/nvim-glosses-qa/scripts/analyze_{play}.sh`
+5. Saves scripts to `~/utono/nvim-glosses-qa/scripts/gloss-play_{play}.sh`
 
 **Example output for multiple plays:**
 
@@ -484,9 +559,9 @@ epilogues. Supports wildcards for batch processing.
 
 | Play | Acts | Scenes | Prologues | Epilogue | Files | Script |
 |------|------|--------|-----------|----------|-------|--------|
-| Henry V | 5 | 23 | 6 | Yes | 28 | analyze_henry-v.sh |
-| Hamlet | 5 | 20 | 0 | No | 20 | analyze_hamlet.sh |
-| Macbeth | 5 | 28 | 0 | No | 28 | analyze_macbeth.sh |
+| Henry V | 5 | 23 | 6 | Yes | 28 | gloss-play_henry-v.sh |
+| Hamlet | 5 | 20 | 0 | No | 20 | gloss-play_hamlet.sh |
+| Macbeth | 5 | 28 | 0 | No | 28 | gloss-play_macbeth.sh |
 
 **Total output files across all plays:** 76
 
@@ -497,13 +572,13 @@ Scripts saved to: ~/utono/nvim-glosses-qa/scripts/
 
 ```bash
 # Preview what will be processed (recommended first)
-~/utono/nvim-glosses-qa/scripts/analyze_henry-v.sh --dry-run
+~/utono/nvim-glosses-qa/scripts/gloss-play_henry-v.sh --dry-run
 
 # Run the full analysis
-~/utono/nvim-glosses-qa/scripts/analyze_henry-v.sh
+~/utono/nvim-glosses-qa/scripts/gloss-play_henry-v.sh
 
 # Run all generated scripts
-for script in ~/utono/nvim-glosses-qa/scripts/analyze_*.sh; do
+for script in ~/utono/nvim-glosses-qa/scripts/gloss-play_*.sh; do
     "$script" --dry-run
 done
 ```
@@ -515,7 +590,7 @@ done
 - Detects prologues that appear before acts vs. between acts
 - Correctly identifies epilogues
 - Generates accurate scene counts per act
-- Uses consistent `--merge 15` threshold for efficiency
+- Uses consistent `--merge 42` threshold for efficiency
 
 ## Example Output
 
@@ -538,21 +613,33 @@ Error: Scene 4.9 (Act IV, Scene IX) not found in henry_v_gut.txt
 
 The scene doesn't exist. Use `--dry-run` to verify scene numbers.
 
-### Claude Code Errors
-
-If Claude Code backend fails, you can try the direct API as a fallback:
+### Validate Scene Exists
 
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
+# Check if a scene exists without processing
 python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
-    play.txt 4 7 --backend api --merge 15
+    play.txt "Act IV, Scene VII" --validate
 ```
 
 ### Check Cache Status
 
 ```bash
 # Preview which speeches are cached
-python ~/utono/nvim-glosses-qa/python/scene_analyzer.py play.txt 4 7 --dry-run
+python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
+    play.txt 4 7 --dry-run
 ```
 
 Output shows `[CACHED]` or `[NEW]` for each speech/chunk.
+
+### Build Fails with Missing Chunks
+
+If `--build-from-cache` fails:
+
+```
+Error: 3 chunks not cached:
+  - 54344567 (CLOWN...OLIVIA)
+  - ed3ff572 (CLOWN...MALVOLIO)
+```
+
+Use `--export-chunks` to see which chunks need processing, then save each
+one with `--save-chunk` before rebuilding.

@@ -975,11 +975,14 @@ class SceneAnalyzer:
         logger.info(f"Saved scene analysis to {output_path}")
         return output_path
 
-    def export_chunks(self) -> dict:
+    def export_chunks(self, gloss_type: str = 'line-by-line') -> dict:
         """Export chunk data as JSON for external processing.
 
         Returns a dictionary with scene metadata and chunk information,
         suitable for processing by Claude Code directly without API calls.
+
+        Args:
+            gloss_type: Type of gloss for cache lookup (default: line-by-line)
 
         Returns:
             Dictionary with scene info and chunks ready for processing.
@@ -1010,7 +1013,7 @@ class SceneAnalyzer:
         # Build chunk data
         chunk_data = []
         for i, chunk in enumerate(chunks, 1):
-            cached = self.db.get_existing(chunk.hash, 'line-by-line')
+            cached = self.db.get_existing(chunk.hash, gloss_type)
             chunk_info = {
                 "index": i,
                 "hash": chunk.hash,
@@ -1028,14 +1031,14 @@ class SceneAnalyzer:
 
         # Generate output filename
         if self.scene == -1:
-            output_filename = "epilogue_line-by-line.md"
+            output_filename = f"epilogue_{gloss_type}.md"
         elif self.scene == 0:
             if self.act == 0:
-                output_filename = "prologue_line-by-line.md"
+                output_filename = f"prologue_{gloss_type}.md"
             else:
-                output_filename = f"act{self.act}_prologue_line-by-line.md"
+                output_filename = f"act{self.act}_prologue_{gloss_type}.md"
         else:
-            output_filename = f"act{self.act}_scene{self.scene}_line-by-line.md"
+            output_filename = f"act{self.act}_scene{self.scene}_{gloss_type}.md"
 
         return {
             "play_name": self.play_name,
@@ -1047,6 +1050,7 @@ class SceneAnalyzer:
             "end_line": end_line,
             "total_speeches": len(speeches),
             "merge_threshold": self.merge_threshold,
+            "gloss_type": gloss_type,
             "output_dir": str(play_dir),
             "output_filename": output_filename,
             "chunks": chunk_data
@@ -1216,6 +1220,22 @@ Examples:
         action='store_true',
         help='Export chunk data as JSON for external processing (no API calls)'
     )
+    parser.add_argument(
+        '--save-chunk',
+        metavar='HASH',
+        help='Save analysis for a specific chunk hash (reads analysis from stdin)'
+    )
+    parser.add_argument(
+        '--build-from-cache',
+        action='store_true',
+        help='Build markdown from cached analyses (all chunks must be cached)'
+    )
+    parser.add_argument(
+        '--gloss-type',
+        default='line-by-line',
+        metavar='TYPE',
+        help='Gloss type for caching/output (default: line-by-line, also: sounds)'
+    )
 
     args = parser.parse_args()
 
@@ -1303,7 +1323,7 @@ Examples:
                 retry_count=args.retry,
                 retry_delay=args.retry_delay
             )
-            chunk_data = analyzer.export_chunks()
+            chunk_data = analyzer.export_chunks(gloss_type=args.gloss_type)
             print(json.dumps(chunk_data, indent=2))
             sys.exit(0)
         except ValueError as e:
@@ -1313,6 +1333,142 @@ Examples:
                 "play_file": str(args.play_file)
             }
             print(json.dumps(error_data, indent=2))
+            sys.exit(1)
+
+    # Save chunk mode: save analysis for a specific chunk hash
+    if args.save_chunk:
+        try:
+            # Read analysis from stdin
+            analysis = sys.stdin.read()
+            if not analysis.strip():
+                print("Error: No analysis provided on stdin", file=sys.stderr)
+                sys.exit(1)
+
+            analyzer = SceneAnalyzer(
+                play_file=args.play_file,
+                act=act,
+                scene=scene,
+                output_dir=args.output_dir,
+                merge_threshold=args.merge,
+                retry_count=args.retry,
+                retry_delay=args.retry_delay
+            )
+
+            # Find the chunk with matching hash
+            chunk_data = analyzer.export_chunks(gloss_type=args.gloss_type)
+            target_chunk = None
+            target_chunk_info = None
+            for chunk_info in chunk_data['chunks']:
+                if chunk_info['hash'] == args.save_chunk:
+                    target_chunk_info = chunk_info
+                    break
+
+            if not target_chunk_info:
+                print(f"Error: Chunk hash {args.save_chunk} not found in scene",
+                      file=sys.stderr)
+                sys.exit(1)
+
+            # Build metadata
+            metadata = {
+                'source_file': str(args.play_file.name),
+                'tag': f"{analyzer.play_name}_act{act}_scene{scene}",
+                'line_number': 0,
+                'char_position': 0,
+                'character': target_chunk_info['speaker_summary'],
+                'act': str(act),
+                'scene': str(scene),
+                'play_name': analyzer.play_name,
+            }
+
+            # Save to database
+            chunk_hash = args.save_chunk
+            chunk_text = target_chunk_info['text']
+            gloss_type = args.gloss_type
+
+            analyzer.db.get_or_create_passage(chunk_hash, chunk_text, metadata)
+
+            filename = f"{chunk_hash[:8]}_chunk_{gloss_type}.md"
+            analyzer.db.save(
+                chunk_hash, chunk_text, analysis, filename,
+                gloss_type, metadata
+            )
+
+            # Format addendum question based on gloss type
+            addendum_label = {
+                'line-by-line': 'Line-by-line analysis',
+                'sounds': 'Sound-pattern analysis',
+            }.get(gloss_type, f'{gloss_type} analysis')
+            analyzer.db.save_addendum(chunk_hash, addendum_label, analysis)
+
+            print(f"Saved chunk {chunk_hash[:8]} ({target_chunk_info['speaker_summary']})")
+            sys.exit(0)
+
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # Build from cache mode: build markdown from cached analyses
+    if args.build_from_cache:
+        try:
+            analyzer = SceneAnalyzer(
+                play_file=args.play_file,
+                act=act,
+                scene=scene,
+                output_dir=args.output_dir,
+                merge_threshold=args.merge,
+                retry_count=args.retry,
+                retry_delay=args.retry_delay
+            )
+
+            # Get chunk data to check cache status
+            gloss_type = args.gloss_type
+            chunk_data = analyzer.export_chunks(gloss_type=gloss_type)
+
+            if not chunk_data['chunks']:
+                print("No chunks found in scene", file=sys.stderr)
+                sys.exit(1)
+
+            # Verify all chunks are cached
+            missing = []
+            for chunk_info in chunk_data['chunks']:
+                if not chunk_info['cached']:
+                    missing.append(f"{chunk_info['hash'][:8]} ({chunk_info['speaker_summary']})")
+
+            if missing:
+                print(f"Error: {len(missing)} chunks not cached:", file=sys.stderr)
+                for m in missing:
+                    print(f"  - {m}", file=sys.stderr)
+                sys.exit(1)
+
+            # Build the markdown document from cached analyses
+            # Re-create chunk objects for formatting
+            start_line, end_line = analyzer.parser.find_scene(act, scene)
+            scene_header = analyzer.parser.lines[start_line].strip()
+            speeches = analyzer.parser.extract_speeches(start_line, end_line)
+            chunks = analyzer._merge_speeches_into_chunks(speeches)
+
+            # Get analyses from cache
+            analyses = []
+            for chunk in chunks:
+                cached = analyzer.db.get_existing(chunk.hash, gloss_type)
+                analyses.append(cached['text'])
+
+            # Generate document
+            document = analyzer._format_scene_document(chunks, analyses, scene_header)
+
+            # Save to file
+            play_dir = analyzer.output_dir / analyzer.play_name
+            play_dir.mkdir(parents=True, exist_ok=True)
+            output_path = play_dir / chunk_data['output_filename']
+
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(document)
+
+            print(f"Built {output_path} from {len(chunks)} cached chunks")
+            sys.exit(0)
+
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
 
     try:
