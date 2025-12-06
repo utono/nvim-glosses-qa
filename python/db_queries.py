@@ -46,11 +46,14 @@ def get_passages_for_play(play_name: str) -> list[dict]:
 
     Returns:
         List of passage dicts ordered by act, scene, line_number.
+        Only one entry per passage (deduplicated by hash).
     """
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
+    # Deduplicate by passage hash - only get one gloss per passage
+    # The Lua code will fetch the preferred gloss type separately
     cursor.execute("""
         SELECT
             p.id, p.hash, p.source_text, p.source_file, p.play_name,
@@ -59,6 +62,7 @@ def get_passages_for_play(play_name: str) -> list[dict]:
         FROM passages p
         JOIN glosses g ON g.passage_id = p.id
         WHERE p.play_name = ?
+          AND g.id = (SELECT MIN(g2.id) FROM glosses g2 WHERE g2.passage_id = p.id)
         ORDER BY
             CAST(p.act AS INTEGER),
             CAST(p.scene AS INTEGER),
@@ -103,7 +107,7 @@ def search_passages(query: str, play_name: Optional[str] = None) -> list[dict]:
         play_name: Optional play name to filter by
 
     Returns:
-        List of matching passage dicts.
+        List of matching passage dicts (deduplicated by hash).
     """
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
@@ -121,6 +125,7 @@ def search_passages(query: str, play_name: Optional[str] = None) -> list[dict]:
             JOIN glosses g ON g.passage_id = p.id
             WHERE p.play_name = ?
               AND (p.source_text LIKE ? OR p.character LIKE ?)
+              AND g.id = (SELECT MIN(g2.id) FROM glosses g2 WHERE g2.passage_id = p.id)
             ORDER BY
                 CAST(p.act AS INTEGER),
                 CAST(p.scene AS INTEGER),
@@ -135,7 +140,8 @@ def search_passages(query: str, play_name: Optional[str] = None) -> list[dict]:
                 g.gloss_type, g.gloss_text
             FROM passages p
             JOIN glosses g ON g.passage_id = p.id
-            WHERE p.source_text LIKE ? OR p.character LIKE ?
+            WHERE (p.source_text LIKE ? OR p.character LIKE ?)
+              AND g.id = (SELECT MIN(g2.id) FROM glosses g2 WHERE g2.passage_id = p.id)
             ORDER BY
                 p.play_name,
                 CAST(p.act AS INTEGER),
