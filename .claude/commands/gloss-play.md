@@ -1,4 +1,4 @@
-Create line-by-line glosses for a Shakespeare play.
+Provide path to gloss-play_<play-name>.sh to create line-by-line glosses.
 
 **Arguments: $ARGUMENTS**
 

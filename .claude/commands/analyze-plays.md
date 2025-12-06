@@ -1,4 +1,4 @@
-Generate shell scripts to analyze Shakespeare plays line-by-line.
+Provide path(s) to .txt play files to generate gloss-play scripts.
 
 **Arguments: $ARGUMENTS**
 

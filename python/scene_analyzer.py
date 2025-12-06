@@ -8,10 +8,6 @@ unified markdown file per scene.
 Usage:
     python scene_analyzer.py <play_file> <act> <scene> [--output-dir DIR]
     python scene_analyzer.py henry_v_gut.txt 4 7
-
-Environment:
-    ANTHROPIC_API_KEY: Required for API backend
-    GLOSS_BACKEND: 'api' or 'claude-code' (default: claude-code)
 """
 
 import argparse
@@ -36,7 +32,7 @@ from gloss import (
     create_backend,
     preprocess_text,
 )
-from gloss.config import GLOSSES_DIR, DEFAULT_BACKEND
+from gloss.config import GLOSSES_DIR
 
 # Scene analyzer log file
 LOG_DIR = Path.home() / "utono" / "nvim-glosses-qa" / "logs"
@@ -495,16 +491,14 @@ class SceneAnalyzer:
     """Analyze an entire scene speech by speech."""
 
     def __init__(self, play_file: Path, act: int, scene: int,
-                 backend: str = None, output_dir: Path = None,
-                 merge_threshold: int = 0, retry_count: int = 3,
-                 retry_delay: int = 30):
+                 output_dir: Path = None, merge_threshold: int = 0,
+                 retry_count: int = 3, retry_delay: int = 30):
         """Initialize scene analyzer.
 
         Args:
             play_file: Path to play text file.
             act: Act number (integer).
             scene: Scene number (integer).
-            backend: 'api' or 'claude-code'.
             output_dir: Directory for output files. Defaults to GLOSSES_DIR.
             merge_threshold: Minimum lines per chunk. Speeches are merged until
                            this threshold is reached. 0 = no merging.
@@ -514,8 +508,7 @@ class SceneAnalyzer:
         self.play_file = Path(play_file)
         self.act = act
         self.scene = scene
-        self.backend = create_backend(backend)
-        self.backend_type = backend or os.getenv('GLOSS_BACKEND', DEFAULT_BACKEND)
+        self.backend = create_backend('claude-code')
         self.output_dir = output_dir or GLOSSES_DIR
         self.merge_threshold = merge_threshold
         self.retry_count = retry_count
@@ -1081,9 +1074,6 @@ Examples:
 
     # Merge small speeches into 42-line chunks (fewer Claude Code calls)
     python scene_analyzer.py henry_v_gut.txt 4 7 --merge 42
-
-    # Use direct API backend instead of claude-code
-    python scene_analyzer.py henry_v_gut.txt 4 7 --backend api
         """
     )
     parser.add_argument(
@@ -1095,12 +1085,6 @@ Examples:
         'act_scene',
         nargs='+',
         help='Act and scene: either "Act IV, Scene VII" or two numbers: 4 7'
-    )
-    parser.add_argument(
-        '--backend', '-b',
-        choices=['api', 'claude-code'],
-        default=os.getenv('GLOSS_BACKEND', DEFAULT_BACKEND),
-        help=f'Backend for generation (default: {DEFAULT_BACKEND})'
     )
     parser.add_argument(
         '--output-dir', '-o',
@@ -1189,16 +1173,6 @@ Examples:
         )
         sys.exit(1)
 
-    # Check for API key if using API backend
-    if args.backend == 'api' and not os.getenv("ANTHROPIC_API_KEY"):
-        print_structured_error(
-            ErrorCode.VALIDATION_ERROR,
-            "ANTHROPIC_API_KEY environment variable not set",
-            suggestion="Set ANTHROPIC_API_KEY or use --backend claude-code",
-            action="Export API key and retry"
-        )
-        sys.exit(1)
-
     # Build scene label for error context
     if scene == -1:
         scene_label = "Epilogue"
@@ -1234,7 +1208,6 @@ Examples:
             play_file=args.play_file,
             act=act,
             scene=scene,
-            backend=args.backend,
             output_dir=args.output_dir,
             merge_threshold=args.merge,
             retry_count=args.retry,
