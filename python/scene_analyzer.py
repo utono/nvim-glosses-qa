@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 import os
 import re
@@ -974,6 +975,83 @@ class SceneAnalyzer:
         logger.info(f"Saved scene analysis to {output_path}")
         return output_path
 
+    def export_chunks(self) -> dict:
+        """Export chunk data as JSON for external processing.
+
+        Returns a dictionary with scene metadata and chunk information,
+        suitable for processing by Claude Code directly without API calls.
+
+        Returns:
+            Dictionary with scene info and chunks ready for processing.
+        """
+        # Find scene boundaries
+        start_line, end_line = self.parser.find_scene(self.act, self.scene)
+        scene_header = self.parser.lines[start_line].strip()
+
+        # Extract speeches
+        speeches = self.parser.extract_speeches(start_line, end_line)
+
+        # Skip if no dialogue
+        if not speeches:
+            return {
+                "play_name": self.play_name,
+                "act": self.act,
+                "scene": self.scene,
+                "scene_header": scene_header,
+                "start_line": start_line,
+                "end_line": end_line,
+                "chunks": [],
+                "error": "No dialogue found (only stage directions)"
+            }
+
+        # Merge into chunks
+        chunks = self._merge_speeches_into_chunks(speeches)
+
+        # Build chunk data
+        chunk_data = []
+        for i, chunk in enumerate(chunks, 1):
+            cached = self.db.get_existing(chunk.hash, 'line-by-line')
+            chunk_info = {
+                "index": i,
+                "hash": chunk.hash,
+                "speaker_summary": chunk.speaker_summary,
+                "line_count": chunk.line_count,
+                "speech_count": len(chunk.speeches),
+                "text": chunk.text,
+                "cached": cached is not None,
+                "cached_text": cached['text'] if cached else None
+            }
+            chunk_data.append(chunk_info)
+
+        # Build output directory path
+        play_dir = self.output_dir / self.play_name
+
+        # Generate output filename
+        if self.scene == -1:
+            output_filename = "epilogue_line-by-line.md"
+        elif self.scene == 0:
+            if self.act == 0:
+                output_filename = "prologue_line-by-line.md"
+            else:
+                output_filename = f"act{self.act}_prologue_line-by-line.md"
+        else:
+            output_filename = f"act{self.act}_scene{self.scene}_line-by-line.md"
+
+        return {
+            "play_name": self.play_name,
+            "play_file": str(self.play_file),
+            "act": self.act,
+            "scene": self.scene,
+            "scene_header": scene_header,
+            "start_line": start_line,
+            "end_line": end_line,
+            "total_speeches": len(speeches),
+            "merge_threshold": self.merge_threshold,
+            "output_dir": str(play_dir),
+            "output_filename": output_filename,
+            "chunks": chunk_data
+        }
+
 
 def parse_act_scene_string(act_scene: str) -> tuple[int, int]:
     """Parse 'Act IV, Scene VII', 'Prologue', or 'Epilogue' format to integers.
@@ -1133,6 +1211,11 @@ Examples:
         action='store_true',
         help='Validate scene exists in play file (exit 0 if found, 1 if not)'
     )
+    parser.add_argument(
+        '--export-chunks',
+        action='store_true',
+        help='Export chunk data as JSON for external processing (no API calls)'
+    )
 
     args = parser.parse_args()
 
@@ -1206,6 +1289,30 @@ Examples:
                 suggestion="Scene may not exist in this edition",
                 action="Check play structure or regenerate script"
             )
+            sys.exit(1)
+
+    # Export chunks mode: output JSON for external processing
+    if args.export_chunks:
+        try:
+            analyzer = SceneAnalyzer(
+                play_file=args.play_file,
+                act=act,
+                scene=scene,
+                output_dir=args.output_dir,
+                merge_threshold=args.merge,
+                retry_count=args.retry,
+                retry_delay=args.retry_delay
+            )
+            chunk_data = analyzer.export_chunks()
+            print(json.dumps(chunk_data, indent=2))
+            sys.exit(0)
+        except ValueError as e:
+            error_data = {
+                "error": str(e),
+                "scene_label": scene_label,
+                "play_file": str(args.play_file)
+            }
+            print(json.dumps(error_data, indent=2))
             sys.exit(1)
 
     try:

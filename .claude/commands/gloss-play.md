@@ -1,244 +1,220 @@
-Generate line-by-line glosses for a play, act, or specific scene.
+Generate line-by-line glosses for a play scene using the current Claude session.
 
 **Arguments: $ARGUMENTS**
 
 ## Argument Formats
 
-### Format 1: Play name with optional act/scene filter
 ```
-/gloss-play <play-name> ["Act N" | "Act N, Scene M"] [--flags]
+/gloss-play <play-file-path> "Act N, Scene M"
+/gloss-play <play-name> "Act N, Scene M"
 ```
 
 Examples:
 ```
-# Entire play
-/gloss-play hamlet
-
-# Single act (all scenes in that act)
-/gloss-play hamlet "Act III"
-/gloss-play henry-v "Act 4"
-
-# Single scene
-/gloss-play hamlet "Act III, Scene I"
+/gloss-play ~/utono/literature/.../twelfth_night_gut.txt "Act I, Scene V"
 /gloss-play twelfth-night "Act I, Scene V"
-
-# With flags
-/gloss-play macbeth --status
-/gloss-play hamlet "Act III" --dry-run
+/gloss-play hamlet "Act III, Scene I"
 ```
 
-### Format 2: Direct play file with optional act/scene filter
-```
-/gloss-play <play-file-path> ["Act N" | "Act N, Scene M"]
-```
+## How This Works
 
-Examples:
-```
-# Entire play
-/gloss-play ~/utono/literature/.../romeo_and_juliet_gut.txt
+This command processes scene chunks **directly in the current Claude Code
+session** - no external API calls are made. The workflow:
 
-# Single act
-/gloss-play ~/utono/literature/.../hamlet_gut.txt "Act III"
-
-# Single scene
-/gloss-play ~/utono/literature/.../romeo_and_juliet_gut.txt "Act II, Scene II"
-/gloss-play ~/utono/literature/.../henry_v_gut.txt "Act 4, Scene 7"
-```
-
-## What This Does
-
-**For specific scene:**
-1. Parses the act and scene from the specification
-2. Runs scene_analyzer.py directly for that single scene
-3. Generates line-by-line glosses for actor rehearsal
-
-**For specific act (all scenes):**
-1. Parses the act number from the specification
-2. Queries the play file to find all scenes in that act
-3. Runs scene_analyzer.py for each scene in sequence
-4. Reports results for all scenes
-
-**For entire play:**
-1. Determines script path from play name or file
-2. Checks cache status (if no flags provided)
-3. Auto-adds `--resume` if cached scenes exist
-4. Runs the script with flags
-5. Reports results
-
-## Parsing the Act/Scene Specification
-
-Accept flexible formats:
-
-**Act-only (all scenes in act):**
-
-| Input | Act | Scene |
-|-------|-----|-------|
-| `"Act III"` | 3 | all |
-| `"Act 4"` | 4 | all |
-| `"act 1"` | 1 | all |
-
-**Specific scene:**
-
-| Input | Act | Scene |
-|-------|-----|-------|
-| `"Act II, Scene II"` | 2 | 2 |
-| `"Act 2, Scene 2"` | 2 | 2 |
-| `"Act III Scene I"` | 3 | 1 |
-| `"Act 4 Scene 7"` | 4 | 7 |
-| `"act 1 scene 5"` | 1 | 5 |
-
-Roman numerals: I=1, II=2, III=3, IV=4, V=5, VI=6, VII=7
-
-**Detection logic:** If input contains "Scene" → specific scene; otherwise → act-only
+1. Run `scene_analyzer.py --export-chunks` to get chunk data as JSON
+2. For each non-cached chunk, generate line-by-line analysis directly
+3. Save results to database and write the output markdown file
 
 ## Steps to Execute
 
 ### Step 1: Parse arguments
 
-**Identify format:**
+Extract play file and act/scene from arguments.
 
-- First arg contains `/` or ends with `.txt` → Format 2 (direct file path)
-- Otherwise → Format 1 (play name)
+**Format detection:**
+- Contains `/` or ends with `.txt` → direct file path
+- Otherwise → play name (find file from gloss script)
 
-**Identify mode:**
-
-- Second arg contains "Scene" → **single scene mode**
-- Second arg contains "Act" but not "Scene" → **act-only mode**
-- No act/scene arg (or only flags) → **entire play mode**
-
-**Examples:**
-```
-hamlet                        → Format 1, entire play
-hamlet "Act III"              → Format 1, act-only (act 3)
-hamlet "Act III, Scene I"     → Format 1, single scene
-hamlet --status               → Format 1, entire play with flag
-~/path/play.txt               → Format 2, entire play
-~/path/play.txt "Act 2"       → Format 2, act-only (act 2)
-~/path/play.txt "Act 2 Sc 3"  → Format 2, single scene
-```
-
-### Step 2: Resolve play file path
-
-**For Format 1 (play name):**
+**For play name format**, extract PLAY_FILE from the gloss script:
 ```bash
-# Find the play file from the gloss script
 SCRIPT=~/utono/nvim-glosses-qa/scripts/gloss-play_<play-name>.sh
-# Extract PLAY_FILE from script: grep "^PLAY_FILE=" "$SCRIPT"
+rg "^PLAY_FILE=" "$SCRIPT" | cut -d'=' -f2 | tr -d '"'
 ```
 
-**For Format 2 (direct path):**
-- Use the provided path directly
+### Step 2: Export chunks
 
-Verify the play file exists before proceeding.
+Run scene_analyzer.py with --export-chunks to get chunk data:
 
-### Step 3: Parse act/scene specification
-
-Convert Roman numerals to Arabic: I=1, II=2, III=3, IV=4, V=5, VI=6, VII=7
-
-**For single scene mode:**
-- Extract act number and scene number
-
-**For act-only mode:**
-- Extract act number
-- Find all scenes in that act:
-```bash
-rg "^SCENE [IVXLC]+\." "<play-file>" | rg "ACT <N>" -A1 | \
-    rg "^SCENE" | sed 's/SCENE //' | cut -d'.' -f1
-```
-  Or parse the script for scene numbers in that act.
-
-### Step 4: Execute based on mode
-
-**Single scene mode:**
 ```bash
 python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
-    "<play-file>" <act> <scene> --merge 42
+    "<play-file>" "<act/scene-spec>" --merge 42 --export-chunks
 ```
 
-**Act-only mode:**
-For each scene in the act:
+This outputs JSON with:
+- `play_name`, `act`, `scene`, `scene_header`
+- `output_dir`, `output_filename`
+- `chunks[]` - each with `text`, `hash`, `cached`, `cached_text`
+
+### Step 3: Process each chunk
+
+For each chunk in the JSON:
+
+**If `cached` is true:** Use the `cached_text` directly.
+
+**If `cached` is false:** Generate the line-by-line analysis.
+
+#### Line-by-Line Analysis Instructions
+
+For each non-cached chunk, perform a line-by-line close reading for actor
+rehearsal. Work through the original text one line at a time.
+
+**For each line, provide in flowing prose:**
+
+1. The line itself quoted in **bold**
+2. What it literally means (1-2 sentences)
+3. The operative word(s) - which must "land" for meaning to arrive
+4. Acting insight - one practical performance note
+
+**Do NOT use labels** like "Meaning:", "Operative:", "Acting:".
+**Do NOT number lines** like "LINE 1:", "LINE 2:".
+Write each analysis as a cohesive paragraph.
+
+**Format Example:**
+
+```
+**"What infinite heart's ease must kings neglect"**
+
+What limitless peace of mind kings must give up. The operative word
+is "neglect" - not "lose" but actively ignore, sacrifice. The question
+is bitter, not curious. Henry already knows the answer. Weight on
+"infinite" - the loss is measureless.
+
+**"That private men enjoy?"**
+
+That ordinary people have freely. "Private" is the word Henry envies;
+"enjoy" lands the contrast. The comparison is complete. "Private men"
+isn't contemptuous - it's wistful. These are the people Henry wishes
+he could be.
+```
+
+**Use practitioner vocabulary:**
+- "Operative word" (Barton) - the word that carries the argument
+- "Thought-through-line" (Berry) - sustaining intention across complexity
+- "Landing" (Hall) - making a word arrive for the audience
+- "Second circle" (Rodenburg) - present, connected energy
+
+**Flag performance challenges:**
+- Enjambment (thought runs over line end)
+- Caesura (mid-line pause)
+- Antithesis (balanced oppositions to shape vocally)
+- Periodic structure (meaning delayed to line end)
+- Inverted syntax (verb before subject)
+
+**SPEAKER ATTRIBUTION:**
+If the chunk contains multiple speakers (names in ALL CAPS followed by a
+period), include the speaker name in ALL CAPS on its own line BEFORE
+analyzing that character's lines.
+
+### Step 4: Save results to database
+
+After generating analysis for a chunk, save it to the database:
+
 ```bash
-python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
-    "<play-file>" <act> <scene> --merge 42
+python3 << 'EOF'
+import sys
+sys.path.insert(0, str(__import__('pathlib').Path.home() / 'utono/xc/nvim/python'))
+from gloss import GlossDatabase
+
+db = GlossDatabase()
+db.setup()
+
+chunk_hash = "<CHUNK_HASH>"
+chunk_text = """<CHUNK_TEXT>"""
+analysis = """<ANALYSIS_TEXT>"""
+
+# Create passage record
+metadata = {
+    'play_name': '<PLAY_NAME>',
+    'act': '<ACT>',
+    'scene': '<SCENE>',
+}
+db.get_or_create_passage(chunk_hash, chunk_text, metadata)
+
+# Save as line-by-line gloss
+filename = f"{chunk_hash[:8]}_chunk_line-by-line.md"
+db.save(chunk_hash, chunk_text, analysis, filename, 'line-by-line', metadata)
+
+# Save to addenda
+db.save_addendum(chunk_hash, "Line-by-line analysis", analysis)
+print(f"Saved chunk {chunk_hash[:8]}")
+EOF
 ```
-Run sequentially, report progress after each scene.
 
-**Entire play mode:**
-1. Check if script exists:
-   `~/utono/nvim-glosses-qa/scripts/gloss-play_<play-name>.sh`
-2. If no flags provided, check cache status:
-   ```bash
-   <script-path> --status
-   ```
-3. Auto-add `--resume` if cached scenes exist
-4. Run the script:
-   ```bash
-   <script-path> <flags>
-   ```
+### Step 5: Build output markdown
 
-### Step 5: Handle script not found (entire play mode)
+After processing all chunks, build the scene document:
 
-If no script exists for the play name:
-```bash
-ls ~/utono/nvim-glosses-qa/scripts/gloss-play_*.sh
+```markdown
+# <Play Name>
+## Act <N>, Scene <M>
+
+*<Scene Header>*
+
+---
+
+### 1. <Speaker Name>
+
+#### Original Text
 ```
-Suggest running `/analyze-plays` to generate the script.
+<chunk text>
+```
 
-### Step 6: Monitor and report
+#### Line-by-Line Analysis
 
-Watch output for:
-- `[FAILED]` markers
-- `[CLAUDE_ACTION_REQUIRED]` markers
-- Success messages
+<analysis>
 
-Report:
-- Scene(s) processed
-- Any failures
-- Output file location
+---
 
-## Available Flags (entire play mode only)
+[repeat for each chunk]
+
+*Generated: <timestamp>*
+*Source: <play_file>*
+```
+
+Write to: `<output_dir>/<output_filename>`
+
+### Step 6: Report results
+
+After completion:
+- Report number of chunks processed (cached vs new)
+- Show output file path
+- Note any errors
+
+## Database Location
+
+`~/utono/literature/gloss.db`
+
+## Output Location
+
+`~/utono/literature/glosses/<play-name>/act<N>_scene<M>_line-by-line.md`
+
+## Flags (for --export-chunks only)
 
 | Flag | Purpose |
 |------|---------|
-| `--dry-run` | Preview without API calls |
-| `--status` | Show cache status |
-| `--validate` | Verify all scenes exist |
-| `--resume` | Skip cached scenes |
-
-## Output Locations
-
-Single scene output: `~/utono/literature/glosses/<play-name>/act<N>_scene<M>.md`
-Entire play output: `~/utono/literature/glosses/<play-name>/`
-
-## Error Recovery
-
-If scene analysis fails:
-1. Check logs: `~/utono/nvim-glosses-qa/logs/scene_analyzer.log`
-2. Retry the specific scene with the direct command
+| `--dry-run` | Preview chunks without processing |
+| `--status` | Show cache status only |
 
 ## Examples
 
 ```
+# Single scene by file path
+/gloss-play ~/utono/literature/.../twelfth_night_gut.txt "Act I, Scene V"
+
 # Single scene by play name
 /gloss-play hamlet "Act III, Scene I"
-/gloss-play twelfth-night "Act I, Scene V"
+/gloss-play henry-v "Act IV, Scene VII"
 
-# Single act by play name (processes all scenes in act)
-/gloss-play hamlet "Act III"
-/gloss-play henry-v "Act 4"
-
-# Single scene by file path
-/gloss-play ~/utono/literature/.../romeo_and_juliet_gut.txt "Act II, Scene II"
-
-# Single act by file path
-/gloss-play ~/utono/literature/.../hamlet_gut.txt "Act III"
-
-# Entire play by file path
-/gloss-play ~/utono/literature/.../hamlet_gut.txt
-
-# Entire play by name
-/gloss-play hamlet
-
-# Check status
-/gloss-play macbeth --status
+# Check what would be processed
+/gloss-play twelfth-night "Act I, Scene V" --dry-run
 ```
