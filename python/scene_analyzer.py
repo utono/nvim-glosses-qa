@@ -177,7 +177,8 @@ class PlayParser:
     )
     PROLOGUE_PATTERN = re.compile(r'^PROLOGUE\.?\s*$', re.IGNORECASE)
     EPILOGUE_PATTERN = re.compile(r'^EPILOGUE\.?\s*$', re.IGNORECASE)
-    SPEAKER_PATTERN = re.compile(r'^([A-Z][A-Z\s]+)\.\s*$')
+    # Match both ALL CAPS (ROMEO.) and Title Case (Romeo.) speakers
+    SPEAKER_PATTERN = re.compile(r'^([A-Z][A-Za-z\s]+)\.\s*$')
     STAGE_DIR_PATTERN = re.compile(r'^\[.*\]\s*$')
 
     # Ordinal words to integers
@@ -435,7 +436,11 @@ class PlayParser:
             line = self.lines[i].rstrip()
 
             # Check for new speaker first (before handling empty lines)
-            speaker_match = self.SPEAKER_PATTERN.match(line.strip()) if line.strip() else None
+            # Speaker names are short (< 30 chars) to avoid matching verse lines
+            stripped = line.strip()
+            speaker_match = None
+            if stripped and len(stripped) < 30:
+                speaker_match = self.SPEAKER_PATTERN.match(stripped)
 
             # Handle empty lines - preserve them within speeches for proper formatting
             if not line.strip():
@@ -460,8 +465,8 @@ class PlayParser:
                         line_end=i - 1
                     ))
 
-                # Start new speech
-                current_speaker = speaker_match.group(1).strip()
+                # Start new speech (always uppercase character names)
+                current_speaker = speaker_match.group(1).strip().upper()
                 current_lines = []
                 speech_start = i
                 continue

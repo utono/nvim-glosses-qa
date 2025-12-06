@@ -1,141 +1,200 @@
-Provide path to gloss-play_<play-name>.sh to create line-by-line glosses.
+Generate line-by-line glosses for a play or specific scene.
 
 **Arguments: $ARGUMENTS**
 
-The argument can be either:
-- A play name (e.g., `henry-v`) - will look for script in scripts directory
-- A full path to the script (e.g., `~/utono/nvim-glosses-qa/scripts/gloss-play_henry-v.sh`)
+## Argument Formats
 
-## Usage
+The command accepts two formats:
 
+### Format 1: Direct play file with optional scene
 ```
-# By play name
+/gloss-play <play-file-path> ["Act N, Scene M"]
+```
+
+Examples:
+```
+# Entire play
+/gloss-play ~/utono/literature/.../romeo_and_juliet_gut.txt
+
+# Specific scene (various formats accepted)
+/gloss-play ~/utono/literature/.../romeo_and_juliet_gut.txt "Act II, Scene II"
+/gloss-play ~/utono/literature/.../henry_v_gut.txt "Act 4, Scene 7"
+/gloss-play ~/utono/literature/.../hamlet_gut.txt "Act III Scene I"
+```
+
+### Format 2: Play name (uses pre-generated script)
+```
+/gloss-play <play-name> [--flags]
+```
+
+Examples:
+```
 /gloss-play henry-v
 /gloss-play hamlet --dry-run
-
-# By full path
-/gloss-play ~/utono/nvim-glosses-qa/scripts/gloss-play_henry-v.sh
-/gloss-play ~/utono/nvim-glosses-qa/scripts/gloss-play_hamlet.sh --resume
+/gloss-play macbeth --status
 ```
 
 ## What This Does
 
-1. Determines script path (from name or uses provided path directly)
+**For specific scene (Format 1 with act/scene):**
+1. Parses the act and scene from the specification
+2. Runs scene_analyzer.py directly for that single scene
+3. Generates line-by-line glosses for actor rehearsal
+
+**For entire play (Format 1 without act/scene or Format 2):**
+1. Determines script path or uses play file directly
 2. Checks cache status (if no flags provided)
-3. Auto-adds `--resume` if cached scenes exist (skips redundant work)
+3. Auto-adds `--resume` if cached scenes exist
 4. Runs the script with flags
-5. Monitors output for errors and `[CLAUDE_ACTION_REQUIRED]` markers
-6. Reports results and suggests next steps if issues occur
+5. Reports results
 
-## Available Flags
+## Parsing the Act/Scene Specification
 
-Pass these after the play name:
+Accept flexible formats for the scene specification:
 
-| Flag | Purpose |
-|------|---------|
-| `--dry-run` | Preview what will be processed without API calls |
-| `--status` | Show cache status (what's done vs pending) |
-| `--validate` | Verify all scenes exist before processing |
-| `--resume` | Skip fully-cached scenes (use after interruption) |
+| Input | Act | Scene |
+|-------|-----|-------|
+| `"Act II, Scene II"` | 2 | 2 |
+| `"Act 2, Scene 2"` | 2 | 2 |
+| `"Act III Scene I"` | 3 | 1 |
+| `"Act 4 Scene 7"` | 4 | 7 |
+| `"act 1 scene 5"` | 1 | 5 |
+
+Roman numerals: I=1, II=2, III=3, IV=4, V=5, VI=6, VII=7
 
 ## Steps to Execute
 
 ### Step 1: Parse arguments
 
-Extract script identifier (first argument) and any flags (remaining arguments).
+Determine which format is being used:
 
-Determine if first argument is a path or a play name:
-- If it contains `/` or ends with `.sh` → treat as full path
-- Otherwise → treat as play name, construct path
+**If first argument contains `/` or ends with `.txt`** → Format 1 (direct file)
+- Extract file path (first argument)
+- Check if second argument exists and looks like act/scene spec
+- If act/scene spec found → single scene mode
+- If no act/scene spec → entire play mode
 
-Examples:
-- `/gloss-play henry-v` → script="gloss-play_henry-v.sh", flags=""
-- `/gloss-play hamlet --dry-run` → script="gloss-play_hamlet.sh", flags="--dry-run"
-- `/gloss-play ~/utono/.../gloss-play_henry-v.sh` → use path directly
-- `/gloss-play ~/utono/.../gloss-play_hamlet.sh --resume` → use path, flags="--resume"
+**Otherwise** → Format 2 (play name with script)
+- Treat as play name, construct script path
+- Remaining arguments are flags
 
-### Step 2: Verify script exists
+### Step 2a: Single Scene Mode (Format 1 with act/scene)
 
-If play name provided, check `~/utono/nvim-glosses-qa/scripts/gloss-play_<play-name>.sh`.
-If full path provided, verify that path exists.
+Parse the act/scene specification:
+```
+# Extract act number (convert Roman to Arabic if needed)
+# Extract scene number (convert Roman to Arabic if needed)
+```
 
-If not found, list available scripts:
+Verify the play file exists.
+
+Run scene_analyzer.py directly:
+```bash
+python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
+    "<play-file>" <act> <scene> --merge 42
+```
+
+Report the result and output location.
+
+### Step 2b: Entire Play Mode (Format 1 without act/scene or Format 2)
+
+**For Format 1 (direct file path):**
+- Derive play name from filename
+  (e.g., `romeo_and_juliet_gut.txt` → `romeo-and-juliet`)
+- Look for matching script in `~/utono/nvim-glosses-qa/scripts/`
+- If no script found, inform user to run `/analyze-plays` first
+
+**For Format 2 (play name):**
+- Construct script path: `~/utono/nvim-glosses-qa/scripts/gloss-play_<name>.sh`
+
+### Step 3: Verify script/file exists
+
+For single scene mode: verify play file exists.
+For entire play mode: verify script exists.
+
+If not found, list available options:
 ```bash
 ls ~/utono/nvim-glosses-qa/scripts/gloss-play_*.sh
 ```
 
-### Step 3: Auto-detect cached scenes
+### Step 4: Auto-detect cached scenes (entire play mode only)
 
-**Skip this step if user provided any flags** (--dry-run, --status, --validate,
---resume). Only auto-detect when running without flags.
+**Skip if user provided flags or in single scene mode.**
 
 Run the script with `--status` to check cache state:
 ```bash
 <script-path> --status
 ```
 
-Parse the output for:
+Parse output for:
 - "Cached: N scenes"
 - "Pending: M scenes"
 
 **Decision logic:**
-- If Cached > 0 AND Pending > 0: Automatically add `--resume` flag
-- If Cached > 0 AND Pending = 0: Report "All scenes already cached" and stop
-- If Cached = 0: Run normally without --resume
+- Cached > 0 AND Pending > 0: Add `--resume` flag automatically
+- Cached > 0 AND Pending = 0: Report "All scenes cached" and stop
+- Cached = 0: Run normally
 
-When auto-adding `--resume`, inform the user:
+### Step 5: Run the command
+
+**Single scene:**
+```bash
+python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
+    "<play-file>" <act> <scene> --merge 42
 ```
-Found N cached scenes, M pending. Automatically using --resume to skip cached.
-```
 
-### Step 4: Run the script
-
-Execute the script with flags (including auto-added --resume if applicable):
+**Entire play:**
 ```bash
 <script-path> <flags>
 ```
 
-### Step 5: Monitor and respond
+### Step 6: Monitor and report
 
-Watch the output for:
-- `[FAILED]` markers indicating scene failures
-- `[CLAUDE_ACTION_REQUIRED]` indicating intervention needed
-- `[SKIPPED]` markers (in resume mode) showing cached scenes
-- Final summary with success/failure counts
+Watch output for:
+- `[FAILED]` markers
+- `[CLAUDE_ACTION_REQUIRED]` markers
+- Success messages
 
-### Step 6: Report results
+Report:
+- Scene(s) processed
+- Any failures
+- Output file location
 
-After completion, summarize:
-- Total scenes processed
-- Any failures and their causes
-- Suggested next steps if errors occurred
-- Location of output files
+## Available Flags (entire play mode only)
+
+| Flag | Purpose |
+|------|---------|
+| `--dry-run` | Preview without API calls |
+| `--status` | Show cache status |
+| `--validate` | Verify all scenes exist |
+| `--resume` | Skip cached scenes |
+
+## Output Locations
+
+Single scene output: `~/utono/literature/glosses/<play-name>/act<N>_scene<M>.md`
+Entire play output: `~/utono/literature/glosses/<play-name>/`
 
 ## Error Recovery
 
-If the script fails or is interrupted:
-
-1. **Check status**: `/gloss-play <name> --status`
-2. **Resume**: `/gloss-play <name> --resume`
-3. **Check logs**: `~/utono/nvim-glosses-qa/logs/scene_analyzer.log`
+If scene analysis fails:
+1. Check logs: `~/utono/nvim-glosses-qa/logs/scene_analyzer.log`
+2. Retry the specific scene with the direct command
 
 ## Examples
 
 ```
-# By play name
-/gloss-play henry-v --validate
-/gloss-play henry-v
-/gloss-play hamlet --status
-/gloss-play macbeth --resume
+# Single scene - the balcony scene
+/gloss-play ~/utono/literature/.../romeo_and_juliet_gut.txt "Act II, Scene II"
 
-# By full path
-/gloss-play ~/utono/nvim-glosses-qa/scripts/gloss-play_henry-v.sh
-/gloss-play ~/utono/nvim-glosses-qa/scripts/gloss-play_hamlet.sh --dry-run
+# Single scene - Henry V before Agincourt
+/gloss-play ~/utono/literature/.../henry_v_gut.txt "Act IV, Scene I"
+
+# Entire play by file path
+/gloss-play ~/utono/literature/.../hamlet_gut.txt
+
+# Entire play by name
+/gloss-play hamlet
+
+# Check status
+/gloss-play macbeth --status
 ```
-
-## Notes
-
-- Scripts are generated by `/analyze-plays` command
-- Output goes to `~/utono/literature/glosses/<play-name>/`
-- Caching means reruns skip already-processed chunks
-- Use `--resume` for efficient restart after interruption
