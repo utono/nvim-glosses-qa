@@ -9,17 +9,22 @@ Claude Q&A terminal (opened with `<M-c>` from nvim-glosses).
 
 | Command | Description |
 |---------|-------------|
-| `/add <terms>` | Add Elizabethan terms (with approval) |
-| `/db` | Display all available database context |
-| `/line-by-line [full]` | Line-by-line close reading for actor rehearsal |
-| `/lines <range>` | Analyze specific lines (e.g., `1-5`, `3,7,12`) |
-| `/lookup <word>` | Search database for a word |
 | `/new` | Clear history and show context summary |
-| `/remove <terms>` | Remove terms from database |
-| `/save` | Save last reply to database |
-| `/summarize` | Generate conversation summary |
+| `/summarize` | Generate summary of conversation (optional) |
+| `/save` | Save the most recent reply to addenda table |
+| `/add <term>` | Add Elizabethan resonance term to catalogue |
+| `/remove <term>` | Remove term from catalogue |
 | `/term [word]` | List all terms, or get record for specific term |
-| `/discuss <word>` | Scholarly analysis across Shakespeare's works |
+| `/lookup <word>` | Search database broadly (glosses, terms, addenda) |
+| `/db` | Show all available context from database |
+| `/line-by-line` | Line-by-line close reading for actor rehearsal |
+| `/lines <range>` | Analyze specific lines (e.g., `1-5`, `3,7,12`) |
+| `/sounds [full]` | Sound-pattern analysis for voicing |
+| `/discuss <word>` | Cross-canon analysis of a word |
+| `/scene` | Generate scene analysis with caching |
+| `/gloss-play` | Generate glosses for a play scene (in-session) |
+| `/gloss-sounds` | Generate sound analysis for a play scene |
+| `/analyze-plays` | Generate gloss-play scripts for all plays |
 
 ---
 
@@ -136,7 +141,7 @@ Generate a concise summary (2-4 paragraphs) of the conversation.
 
 ---
 
-### /line-by-line [full]
+### /line-by-line
 
 Perform a line-by-line close reading of the passage for actor rehearsal.
 
@@ -145,8 +150,7 @@ text through detailed analysis.
 
 **Usage:**
 ```
-/line-by-line        # Default: pauses every 4-6 lines
-/line-by-line full   # Complete entire passage without pausing
+/line-by-line
 ```
 
 **For each line, provides:**
@@ -182,33 +186,6 @@ the answer. Weight on "infinite" — the loss is measureless.
 - Antithesis (balanced oppositions)
 - Periodic structure (meaning delayed to line end)
 - Inverted syntax (verb before subject)
-
-**For long passages (>15 lines):** Breaks into sections and pauses between them
-to check in with the actor (default mode) or uses section headers but continues
-through to end (full mode).
-
----
-
-### /lines <range>
-
-Analyze specific lines from the passage.
-
-**Purpose:** Focus on particular lines without analyzing the entire passage.
-
-**Usage:**
-```
-/lines 1-5           # Lines 1 through 5
-/lines 3,7,12        # Lines 3, 7, and 12
-/lines 1-3,8,10-12   # Mixed ranges and individual lines
-```
-
-**Line counting:** Counts dialogue lines from the original text starting at 1.
-Skips blank lines and character names when counting.
-
-**Behavior:** Completes all requested lines without pausing.
-
-**Same analysis structure as `/line-by-line`:** meaning, operative words,
-breath/thought, and acting note for each line.
 
 ---
 
@@ -249,9 +226,66 @@ Retrieve Elizabethan term records from the database.
 
 ---
 
+### /lines <range>
+
+Analyze specific lines from the passage by number.
+
+**Usage:**
+```
+/lines 1-5           # Range: lines 1 through 5
+/lines 3,7,12        # List: lines 3, 7, and 12
+/lines 1-3,8,10-12   # Mixed: lines 1-3, line 8, and lines 10-12
+```
+
+**Structure per line:**
+1. The line quoted in bold
+2. What it literally means (1-2 sentences)
+3. Operative word(s) — which must "land"
+4. Breath/thought guidance
+5. Acting insight — one practical performance note
+
+**Output format:** Flowing prose paragraphs (no labels like "Meaning:").
+
+**After completion:** Offers to continue with more lines or explore deeper.
+
+---
+
+### /sounds [full]
+
+Sound-pattern analysis focusing on vowels, consonants, and alliterative
+patterns that should be "landed" for the audience.
+
+**Usage:**
+```
+/sounds              # Analyze in sections with pauses
+/sounds full         # Complete entire passage without pausing
+```
+
+**Structure per line:**
+1. The line quoted in bold
+2. What it literally means
+3. Key sounds to land (specific vowels, consonants, clusters)
+4. How sounds connect to meaning
+5. Performance note on voicing
+
+**Sound patterns identified:**
+- Assonance (repeated vowels): long A in "graves," "native," "brave"
+- Alliteration (initial consonants): "brave," "blood," "battle"
+- Consonance (consonants anywhere): T in "tattered," "tottering"
+- Sibilance (S/SH): hissing, whispering quality
+- Plosives (P, B, T, D, K, G): explosive, percussive
+- Nasals (M, N): humming, continuous
+- Liquids (L, R): flowing, melting
+
+**Summary:** After completion, lists 2-3 key recurring sounds and where they
+appear.
+
+---
+
 ### /discuss <word>
 
 Scholarly analysis of how Shakespeare uses a word across his complete works.
+(Also available as prompt pattern `discuss <word>`.)
 
 **Usage:**
 ```
@@ -261,15 +295,159 @@ Scholarly analysis of how Shakespeare uses a word across his complete works.
 ```
 
 **Structure:**
-1. **Etymology and Elizabethan meaning** - what the word meant to Shakespeare's
-   audience (may differ from modern usage)
-2. **Key appearances** - notable uses across tragedies, histories, comedies,
-   romances, sonnets, and narrative poems
-3. **Thematic patterns** - how Shakespeare deploys the word for dramatic effect
-4. **Connection to current passage** - relevance to the passage being discussed
+1. **Etymology and Elizabethan meaning** — what the word meant to
+   Shakespeare's audience (may differ from modern usage)
+2. **Key appearances** — notable uses across tragedies, histories,
+   comedies, romances, sonnets, and narrative poems
+3. **Thematic patterns** — how Shakespeare deploys the word for dramatic
+   effect
+4. **Connection to current passage** — relevance to the passage being
+   discussed
 
-**Note:** Claude queries the database first to find other glosses containing
-the word.
+**Database integration:** Queries for other glosses containing the word,
+checks elizabethan_terms table, notes prior discussions.
+
+---
+
+### /scene
+
+Generate line-by-line actor analysis for an entire scene.
+
+**Usage:**
+```
+/scene henry_v_gut.txt "Act IV, Scene VII"
+/scene henry_v_gut.txt 4 7
+/scene henry_v_gut.txt "Act IV, Scene VII" --merge 15
+/scene henry_v_gut.txt 4 7 --dry-run
+```
+
+**Options:**
+- `--merge N` or `-m N`: Merge speeches into N-line chunks (reduces API calls)
+- `--dry-run` or `-n`: Preview without processing
+
+**Output:** `~/utono/literature/glosses/{play}/act{N}_scene{M}_line-by-line.md`
+
+**Features:**
+- Parses play file to locate act/scene
+- Extracts speeches (each character's continuous dialogue)
+- Checks cache — skips already-analyzed speeches
+- Saves each unit to database for reuse
+- Produces unified markdown with all analyses
+
+**Workflow with `<M-a>`:**
+1. Navigate to scene in Neovim
+2. Press `<M-a>` to copy "Act IV, Scene VII" to clipboard
+3. Run `/scene henry_v_gut.txt "<paste>" --merge 15`
+
+---
+
+### /gloss-play
+
+Generate line-by-line glosses for a play scene using the current Claude
+session (no external API calls).
+
+**Usage:**
+```
+/gloss-play ~/utono/literature/.../twelfth_night_gut.txt "Act I, Scene V"
+/gloss-play twelfth-night "Act I, Scene V"
+/gloss-play hamlet "Act III, Scene I"
+```
+
+**Workflow:**
+1. Run `scene_analyzer.py --export-chunks` to get chunk data as JSON
+2. For each non-cached chunk: generate analysis, save with `--save-chunk`
+3. Run `scene_analyzer.py --build-from-cache` to build markdown
+
+**Analysis style:** Elevated, theatrical prose with:
+- Vivid paraphrase (not flat translation)
+- Operative words explained with WHY they land
+- Specific acting direction (physical, vocal, energy)
+- Structural insights (enjambment, caesura, antithesis)
+- Audience awareness and foreshadowing
+
+**Output:** `~/utono/literature/glosses/<play>/act<N>_scene<M>_line-by-line.md`
+
+---
+
+### /gloss-sounds
+
+Generate sound-pattern analysis for a play scene using the current session.
+
+**Usage:**
+```
+/gloss-sounds henry-v "Act IV, Scene III"
+/gloss-sounds hamlet "Act III, Scene I"
+```
+
+**Workflow:** Same as `/gloss-play` but with `--gloss-type sounds`.
+
+**Analysis focus:**
+- Specific vowel/consonant patterns per line
+- How sounds connect across lines
+- Vocal direction for landing sounds
+- Sound-to-meaning connections
+
+**Summary section:** After all chunks, adds "KEY SOUNDS TO LAND" with:
+- Primary sounds threading through the scene
+- Sonic arc of the scene
+
+**Output:** `~/utono/literature/glosses/<play>/act<N>_scene<M>_sounds.md`
+
+**When to use:** Especially valuable for set pieces, soliloquies, heightened
+emotional moments, and passages difficult to voice.
+
+---
+
+### /analyze-plays
+
+Generate gloss-play scripts for all Shakespeare plays.
+
+**Usage:**
+```
+/analyze-plays                    # Generate scripts for all plays
+/analyze-plays --help             # Show help
+```
+
+**What it does:** Runs `generate_gloss_scripts.py` to analyze all play files
+in `~/utono/literature/shakespeare-william/gutenberg/` and generate shell
+scripts for each play.
+
+**Output:** `~/utono/nvim-glosses-qa/scripts/gloss-play_*.sh`
+
+**Generated script features:**
+- `--status`: Check processing status
+- `--dry-run`: Preview without API calls
+- `--resume`: Resume after interruption
+- `--validate`: Validate output
+
+**Example usage after generation:**
+```bash
+~/utono/nvim-glosses-qa/scripts/gloss-play_twelfth-night.sh --status
+~/utono/nvim-glosses-qa/scripts/gloss-play_twelfth-night.sh --dry-run
+~/utono/nvim-glosses-qa/scripts/gloss-play_twelfth-night.sh
+```
+
+---
+
+## Prompt Patterns
+
+These are natural language patterns (not slash commands) that trigger specific
+response formats. Note that `discuss <word>` is also available as `/discuss`.
+
+### explain <phrase>
+
+Close reading of a specific phrase or line from the passage.
+
+**Usage:**
+```
+explain twin-born with greatness
+explain "subject to the breath of every fool"
+```
+
+**Structure:**
+1. Opening statement placing phrase in dramatic context
+2. Line-by-line analysis with bold quoted phrases
+3. Synthesis connecting parts into thematic whole
 
 ---
 
@@ -309,12 +487,27 @@ Available in the Q&A session:
 
 ---
 
-## Typical Workflow
+## Typical Workflows
+
+### Passage Q&A (from nvim-glosses)
 
 1. Press `<M-c>` in nvim-glosses to open Q&A terminal
 2. Ask questions about the passage
-3. Use `discuss <word>` for deep dives on specific terms
+3. Use `/discuss <word>` for deep dives on specific terms
 4. Use `/add <term>` to record Elizabethan resonances
 5. Use `/summarize` to generate a summary
 6. Use `/save` to store the summary in the database
 7. Type `/done` or press `<M-c>` to close
+
+### Scene-Level Glossing
+
+1. Run `/analyze-plays` to generate scripts for all plays (one-time setup)
+2. Use `/gloss-play <play> "Act N, Scene M"` to generate line-by-line glosses
+3. Use `/gloss-sounds <play> "Act N, Scene M"` for sound analysis
+4. Output files appear in `~/utono/literature/glosses/<play>/`
+
+### Quick Line Analysis (in Q&A session)
+
+1. Use `/lines 1-5` to analyze specific lines
+2. Use `/sounds full` for sound-pattern analysis of entire passage
+3. Use `/line-by-line` for complete passage analysis

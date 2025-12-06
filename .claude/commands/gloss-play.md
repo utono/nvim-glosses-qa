@@ -76,13 +76,18 @@ and speak each line.
 For each line, provide in flowing prose:
 
 1. The line itself quoted in **bold**
-2. What it literally means (1-2 sentences)
-3. The operative word(s) - which must "land" for meaning to arrive
-4. Acting insight - one practical performance note
+2. What it literally means (1-2 sentences) — THE TRANSLATION
+3. A blank line after the translation
+4. The operative word(s) - which must "land" for meaning to arrive
+5. Acting insight - one practical performance note
+
+**CRITICAL FORMAT:** After the translation (item 2), insert a BLANK LINE
+before continuing with operative words and acting notes. This separates
+the plain meaning from the dramaturgical analysis.
 
 **Do NOT use labels** like "Meaning:", "Operative:", "Acting:".
 **Do NOT number lines** like "LINE 1:", "LINE 2:".
-Write each analysis as a cohesive paragraph.
+Write each analysis as a cohesive paragraph (after the translation).
 
 ### Elevated Style Requirements
 
@@ -165,19 +170,23 @@ Note when form signals meaning:
 ```
 **"Now all the youth of England are on fire"**
 
-England's young men burn with martial energy. The operative word is
-"fire" — not merely eager, but aflame with passion for war. The
-Chorus speaks with rising excitement, inviting the audience into
-this fever. The line must kindle that heat in the room. Weight "all"
-to paint the totality of this transformation.
+England's young men burn with martial energy.
+
+The operative word is "fire" — not merely eager, but
+aflame with passion for war. The Chorus speaks with
+rising excitement, inviting the audience into this
+fever. The line must kindle that heat in the room.
+Weight "all" to paint the totality of this change.
 
 **"And silken dalliance in the wardrobe lies"**
 
-Soft peacetime pleasures are packed away like silk clothing.
-"Dalliance" is the key — courtship, flirtation, leisure all
-abandoned. "Lies" completes the thought: these things are dormant,
-not destroyed. The antithesis is implicit: fire vs. silk, war vs.
-play. Let "wardrobe" be physical — we see the chest closing.
+Soft peacetime pleasures are packed away like silk.
+
+"Dalliance" is the key — courtship, flirtation, leisure
+all abandoned. "Lies" completes the thought: these things
+are dormant, not destroyed. The antithesis is implicit:
+fire vs. silk, war vs. play. Let "wardrobe" be physical —
+we see the chest closing.
 ```
 
 ### Format Example 2: Romeo and Juliet
@@ -187,40 +196,49 @@ ROMEO.
 
 **"Sleep dwell upon thine eyes peace in thy breast!"**
 
-May sleep rest on your eyes, peace fill your heart. This is
-benediction — Romeo blessing Juliet as he watches her sleep. The
-operative words are "dwell" and "peace" — not fleeting rest but
-permanent residence. The syntax is compressed, almost liturgical:
-no comma between "eyes" and "peace" creates rhythmic urgency.
-Romeo speaks as priest and lover simultaneously.
+May sleep rest on your eyes, peace fill your heart.
+
+This is benediction — Romeo blessing Juliet as he
+watches her sleep. The operative words are "dwell"
+and "peace" — not fleeting rest but permanent
+residence. The syntax is compressed, almost liturgical:
+no comma between "eyes" and "peace" creates rhythmic
+urgency. Romeo speaks as priest and lover.
 
 **"Would I were sleep and peace so sweet to rest!"**
 
-I wish I could be that sleep and peace, so I could rest as sweetly
-with you. "Would I were" carries the operative weight — subjunctive
-longing, impossible wish. Romeo wants to dissolve into the
-abstractions he just invoked. "So sweet to rest" lands with double
-meaning: rest sweetly AND rest with her. The line turns inward —
-he's no longer blessing her, he's mourning his separation.
+I wish I could be that sleep and peace, so I could
+rest as sweetly with you.
+
+"Would I were" carries the operative weight —
+subjunctive longing, impossible wish. Romeo wants to
+dissolve into the abstractions he just invoked. "So
+sweet to rest" lands doubly: rest sweetly AND rest
+with her. The line turns inward — he's mourning his
+separation now.
 
 **"Hence will I to my ghostly father's cell"**
 
-From here I'll go to my spiritual father's room. "Hence" is the
-operative — departure, movement away from Juliet. "Ghostly" means
-spiritual (the Friar is his confessor), but the word carries
-death's shadow. The syntax is inverted — "will I to" instead of
-"I will go to" — giving the line formality, perhaps self-discipline.
-Romeo is pulling himself away from reverie into action.
+From here I'll go to my spiritual father's room.
+
+"Hence" is the operative — departure, movement away.
+"Ghostly" means spiritual (the Friar is his confessor),
+but the word carries death's shadow. The syntax is
+inverted — "will I to" instead of "I will go to" —
+giving formality, perhaps self-discipline. Romeo pulls
+himself from reverie into action.
 
 **"His help to crave and my dear hap to tell."**
 
-To beg his help and tell him my precious good fortune. The operative
-words are "crave" and "hap" — he's a supplicant now, not a lover-
-priest. "Dear hap" is stunning compression: "hap" (fortune, chance)
-modified by "dear" (precious, costly). The rhyming couplet snaps the
-speech shut — Romeo moves from lyric contemplation to plot mechanics.
-The actor must shift energy: from communion with sleeping Juliet to
-forward momentum toward the Friar.
+To beg his help and tell him my precious fortune.
+
+The operative words are "crave" and "hap" — he's a
+supplicant now, not a lover-priest. "Dear hap" is
+stunning compression: "hap" (fortune, chance) modified
+by "dear" (precious, costly). The rhyming couplet snaps
+the speech shut — Romeo moves from contemplation to
+plot mechanics. The actor must shift energy: from
+communion with sleeping Juliet to forward momentum.
 ```
 
 ### Guidance
@@ -252,6 +270,10 @@ forward momentum toward the Friar.
 - Do NOT offer follow-up questions
 - Do NOT use --- or separators between line analyses
 - Begin IMMEDIATELY with the first line in bold
+
+**LINE WIDTH:** Wrap all prose at 65 characters maximum. This ensures
+proper display in the terminal viewer. Break lines at natural phrase
+boundaries — never mid-word, rarely mid-phrase.
 
 **SPEAKER ATTRIBUTION:**
 If the chunk contains multiple speakers (names in ALL CAPS followed by a

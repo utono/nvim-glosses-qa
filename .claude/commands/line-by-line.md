@@ -27,24 +27,34 @@ Write each analysis as a cohesive paragraph.
 ```
 **"What infinite heart's ease must kings neglect"**
 
-What limitless peace of mind kings must give up. The operative word
-is "neglect" — not "lose" but actively ignore, sacrifice. The question
-is bitter, not curious. Henry already knows the answer. Weight on
-"infinite" — the loss is measureless.
+What limitless peace of mind kings must give up.
+
+The operative word is "neglect" — not "lose" but
+actively ignore, sacrifice. The question is bitter,
+not curious. Henry already knows the answer. Weight
+on "infinite" — the loss is measureless.
 
 ---
 
 **"That private men enjoy?"**
 
-That ordinary people have freely. "Private" is the word Henry envies;
-"enjoy" lands the contrast. The comparison is complete. "Private men"
-isn't contemptuous — it's wistful. These are the people Henry wishes
-he could be.
+That ordinary people have freely.
+
+"Private" is the word Henry envies; "enjoy" lands
+the contrast. The comparison is complete. "Private
+men" isn't contemptuous — it's wistful. These are
+the people Henry wishes he could be.
 
 ---
 
 [Continue for each line...]
 ```
+
+**IMPORTANT FORMAT RULES:**
+- The first sentence (literal meaning/translation) MUST be on its own
+  line, followed by a blank line, then the analysis
+- Wrap all prose at 65 characters maximum for terminal display
+- Break lines at natural phrase boundaries — never mid-word
 
 ## Guidance
 

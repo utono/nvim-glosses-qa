@@ -178,8 +178,11 @@ class PlayParser:
     )
     PROLOGUE_PATTERN = re.compile(r'^PROLOGUE\.?\s*$', re.IGNORECASE)
     EPILOGUE_PATTERN = re.compile(r'^EPILOGUE\.?\s*$', re.IGNORECASE)
-    # Match both ALL CAPS (ROMEO.) and Title Case (Romeo.) speakers
-    SPEAKER_PATTERN = re.compile(r'^([A-Z][A-Za-z\s]+)\.\s*$')
+    # Cast list section headers
+    CAST_LIST_PATTERN = re.compile(
+        r'^(PERSONS REPRESENTED|DRAMATIS PERSONAE|DRAMATIS PERSON|CHARACTERS)\.?\s*$',
+        re.IGNORECASE
+    )
     STAGE_DIR_PATTERN = re.compile(r'^\[.*\]\s*$')
 
     # Ordinal words to integers
@@ -195,12 +198,197 @@ class PlayParser:
         """
         self.play_file = Path(play_file)
         self.lines: list[str] = []
+        self.character_names: set[str] = set()
         self._load_file()
+        self._parse_cast_list()
 
     def _load_file(self) -> None:
         """Load play file into memory."""
         with open(self.play_file, 'r', encoding='utf-8') as f:
             self.lines = f.readlines()
+
+    def _parse_cast_list(self) -> None:
+        """Parse the cast list (Dramatis Personae) to extract character names.
+
+        Populates self.character_names with normalized speaker names that can
+        appear in the play. Handles both ALL CAPS plays (Twelfth Night) and
+        Title Case plays (Romeo and Juliet).
+
+        Also scans the play text for ALL CAPS speaker patterns as a fallback
+        to catch speakers not in the cast list or listed under different names.
+        """
+        in_cast_section = False
+        cast_end_line = 0
+
+        # Find cast list section
+        for i, line in enumerate(self.lines):
+            stripped = line.strip()
+
+            # Start of cast list
+            if self.CAST_LIST_PATTERN.match(stripped):
+                in_cast_section = True
+                continue
+
+            # End of cast list (ACT, SCENE, PROLOGUE, or significant blank gap)
+            if in_cast_section:
+                if (self.ACT_PATTERN.match(stripped) or
+                    self.SCENE_PATTERN.match(stripped) or
+                    self.PROLOGUE_PATTERN.match(stripped) or
+                    stripped.startswith('SCENE')):
+                    cast_end_line = i
+                    break
+
+        # Parse character names from cast list if found
+        if in_cast_section:
+            self._parse_cast_entries(cast_end_line)
+
+        # Always also scan for ALL CAPS speakers in the text itself
+        # This catches speakers like "DUKE" when cast says "ORSINO"
+        self._scan_for_speakers()
+
+        # Add common generic speakers that may not be in cast list
+        generic_speakers = [
+            'ALL', 'BOTH', 'CHORUS', 'CHOR', 'PROLOGUE', 'EPILOGUE',
+            'SERVANT', 'MESSENGER', 'ATTENDANT', 'OFFICER', 'GENTLEMAN',
+            'SOLDIER', 'CITIZEN', 'PAGE', 'BOY', 'WATCHMAN', 'GUARD',
+            'FIRST OFFICER', 'SECOND OFFICER', 'FIRST CITIZEN',
+            'SECOND CITIZEN', 'FIRST SERVANT', 'SECOND SERVANT',
+            'FIRST GENTLEMAN', 'SECOND GENTLEMAN', 'FIRST WATCHMAN',
+            'FIRST MUSICIAN', 'SECOND MUSICIAN', 'THIRD MUSICIAN',
+        ]
+        for speaker in generic_speakers:
+            self.character_names.add(speaker)
+
+        logger.debug(f"Parsed {len(self.character_names)} character names")
+
+    def _parse_cast_entries(self, cast_end_line: int) -> None:
+        """Parse individual entries from the cast list section.
+
+        Args:
+            cast_end_line: Line number where cast list ends (0-indexed).
+        """
+        # Title words that extend a character name
+        title_prefixes = {'LADY', 'LORD', 'SIR', 'FRIAR', 'DUKE', 'KING',
+                          'QUEEN', 'PRINCE', 'PRINCESS', 'FIRST', 'SECOND',
+                          'THIRD', 'AN', 'A'}
+        # Description words that end a character name
+        description_words = {'WIFE', 'SON', 'DAUGHTER', 'SERVANT', 'FRIEND',
+                             'KINSMAN', 'NEPHEW', 'UNCLE', 'BROTHER', 'SISTER',
+                             'STEWARD', 'WOMAN', 'ATTENDING', 'OF', 'TO', 'IN',
+                             'A', 'THE', 'HIS', 'HER', 'RICH', 'YOUNG', 'OLD'}
+
+        for i, line in enumerate(self.lines):
+            if i >= cast_end_line and cast_end_line > 0:
+                break
+
+            stripped = line.strip()
+            if not stripped or self.CAST_LIST_PATTERN.match(stripped):
+                continue
+
+            # Skip stage directions and scene descriptions
+            if stripped.startswith('[') or stripped.startswith('SCENE'):
+                continue
+
+            # Split on comma first (some entries use comma to separate)
+            parts = stripped.split(',', 1)
+            first_part = parts[0].strip()
+
+            # Also check for multi-word entries without comma
+            # e.g., "MALVOLIO Steward to Olivia."
+            words = first_part.split()
+            if not words:
+                continue
+
+            # Skip if first word doesn't start with capital
+            if not words[0][0].isupper():
+                continue
+
+            # Build name from leading capitalized words (respecting titles)
+            name_words = []
+            for w in words:
+                w_upper = w.upper().rstrip('.,')
+                # Stop at description words (unless it's a title prefix)
+                if w_upper in description_words and w_upper not in title_prefixes:
+                    break
+                # Stop at lowercase words (descriptions)
+                if w[0].islower():
+                    break
+                # Stop at very long "words" (likely merged text)
+                if len(w) > 20:
+                    break
+                name_words.append(w.rstrip('.,'))
+
+            if name_words:
+                name = ' '.join(name_words)
+                self.character_names.add(name.upper())
+
+                # Also extract title as potential speaker
+                # e.g., "ORSINO, Duke of Illyria" -> also add "DUKE"
+                if len(parts) > 1:
+                    desc = parts[1].strip()
+                    desc_words = desc.split()
+                    if desc_words and desc_words[0][0].isupper():
+                        first_desc_word = desc_words[0].rstrip('.,').upper()
+                        if first_desc_word in title_prefixes:
+                            self.character_names.add(first_desc_word)
+
+                # Add abbreviation for Chorus
+                if name.upper() == 'CHORUS':
+                    self.character_names.add('CHOR')
+
+    def _scan_for_speakers(self) -> None:
+        """Scan play text to find speaker patterns when no cast list exists.
+
+        Falls back to detecting ALL CAPS names followed by period.
+        """
+        # Pattern for ALL CAPS speaker (safe fallback)
+        all_caps_pattern = re.compile(r'^([A-Z][A-Z\s]+)\.\s*$')
+
+        for line in self.lines:
+            stripped = line.strip()
+            if len(stripped) > 30:
+                continue
+            match = all_caps_pattern.match(stripped)
+            if match:
+                name = match.group(1).strip()
+                # Skip ACT/SCENE markers
+                if not (name.startswith('ACT') or name.startswith('SCENE')):
+                    self.character_names.add(name)
+
+        logger.debug(f"Scanned {len(self.character_names)} speaker names from text")
+
+    def _is_speaker_line(self, line: str) -> Optional[str]:
+        """Check if a line is a speaker designation.
+
+        Args:
+            line: The line to check (should be stripped).
+
+        Returns:
+            The speaker name if this is a speaker line, None otherwise.
+        """
+        # Must end with period and be reasonably short
+        if not line.endswith('.') or len(line) > 30:
+            return None
+
+        # Extract potential speaker name (without trailing period)
+        potential_name = line[:-1].strip()
+
+        # Skip ACT/SCENE markers
+        if potential_name.upper().startswith(('ACT', 'SCENE')):
+            return None
+
+        # Check against known character names (case-insensitive)
+        potential_upper = potential_name.upper()
+        if potential_upper in self.character_names:
+            return potential_upper
+
+        # Also check if it matches the pattern of known multi-word names
+        # e.g., "Lady Montague" should match if "LADY MONTAGUE" is known
+        normalized = ' '.join(potential_name.split()).upper()
+        if normalized in self.character_names:
+            return normalized
+
+        return None
 
     def _roman_to_int(self, roman: str) -> int:
         """Convert Roman numeral to integer."""
@@ -435,16 +623,13 @@ class PlayParser:
 
         for i in range(start_line, end_line + 1):
             line = self.lines[i].rstrip()
-
-            # Check for new speaker first (before handling empty lines)
-            # Speaker names are short (< 30 chars) to avoid matching verse lines
             stripped = line.strip()
-            speaker_match = None
-            if stripped and len(stripped) < 30:
-                speaker_match = self.SPEAKER_PATTERN.match(stripped)
+
+            # Check for new speaker using cast-list-aware detection
+            speaker_name = self._is_speaker_line(stripped) if stripped else None
 
             # Handle empty lines - preserve them within speeches for proper formatting
-            if not line.strip():
+            if not stripped:
                 # Only add empty line if we're inside a speech
                 if current_speaker and current_lines:
                     current_lines.append('')
@@ -452,9 +637,9 @@ class PlayParser:
 
             # Check for pure stage directions (lines that are only [bracketed text])
             # Include them in speech text for display, but they won't be analyzed line-by-line
-            is_stage_direction = self.STAGE_DIR_PATTERN.match(line.strip())
+            is_stage_direction = self.STAGE_DIR_PATTERN.match(stripped)
 
-            if speaker_match:
+            if speaker_name:
                 # Save previous speech if exists
                 if current_speaker and current_lines:
                     speech_text = f"{current_speaker}.\n" + "\n".join(current_lines)
@@ -466,8 +651,8 @@ class PlayParser:
                         line_end=i - 1
                     ))
 
-                # Start new speech (always uppercase character names)
-                current_speaker = speaker_match.group(1).strip().upper()
+                # Start new speech (speaker_name is already uppercase)
+                current_speaker = speaker_name
                 current_lines = []
                 speech_start = i
                 continue

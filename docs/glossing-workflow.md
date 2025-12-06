@@ -1,132 +1,170 @@
 # Glossing Workflow
 
-This document describes the two-step process for creating line-by-line
-glosses of Shakespeare plays.
+This document describes the process for creating line-by-line glosses of
+Shakespeare plays using the `/gloss-play` slash command.
 
 ## Overview
 
-1. **Generate scripts** - Run `/analyze-plays` to create shell scripts
-2. **Run scripts** - Run `/gloss-play` to execute the analysis
+The `/gloss-play` command processes a single scene at a time, generating
+line-by-line actor-focused glosses directly in the Claude Code session.
 
-## Step 1: Generate Analysis Scripts
+**Key features:**
+- In-session processing (no external API calls)
+- Chunk-based caching (resume-safe)
+- Automatic speaker attribution
+- Database-backed storage
 
-Use the `/analyze-plays` slash command to scan play files and generate
-shell scripts that will process each scene.
-
-### Usage
-
-```bash
-# Single play
-/analyze-plays ~/utono/literature/shakespeare-william/gutenberg/henry_v_gut.txt
-
-# All plays in directory
-/analyze-plays ~/utono/literature/shakespeare-william/gutenberg/*.txt
-
-# Multiple specific plays
-/analyze-plays ~/utono/.../hamlet_gut.txt ~/utono/.../macbeth_gut.txt
-```
-
-### What It Does
-
-1. Reads each play file to discover its structure
-2. Identifies all acts, scenes, prologues, and epilogues
-3. Generates a shell script for each play
-4. Makes scripts executable
-
-### Output
-
-Scripts are saved to `~/utono/nvim-glosses-qa/scripts/` with names like:
-- `gloss-play_henry-v.sh`
-- `gloss-play_hamlet.sh`
-- `gloss-play_macbeth.sh`
-
-## Step 2: Run Analysis Scripts
-
-Use the `/gloss-play` slash command to execute the generated scripts.
-
-### Usage
+## Quick Start
 
 ```bash
-# By play name (looks up script automatically)
-/gloss-play henry-v
+# By file path + scene
+/gloss-play ~/utono/literature/.../twelfth_night_gut.txt "Act I, Scene II"
 
-# By full path to script
-/gloss-play ~/utono/nvim-glosses-qa/scripts/gloss-play_henry-v.sh
+# By play name + scene (requires generated script)
+/gloss-play twelfth-night "Act I, Scene II"
 ```
 
-### Auto-Resume Feature
+## How It Works
 
-When run without flags, `/gloss-play` automatically:
-1. Checks cache status for the play
-2. If cached scenes exist, adds `--resume` flag automatically
-3. Reports: "Found N cached scenes, M pending. Using --resume."
+### 1. Export Chunks
 
-This means you can always just run `/gloss-play henry-v` and it will
-efficiently skip already-processed scenes.
+The command runs `scene_analyzer.py --export-chunks` to get scene data as JSON:
 
-### Available Flags
+```json
+{
+  "play_name": "twelfth-night",
+  "act": 1, "scene": 2,
+  "chunks": [
+    {"hash": "3b4512a4...", "cached": false, "text": "VIOLA.\nWhat country..."},
+    {"hash": "8726d7be...", "cached": true, "cached_text": "..."}
+  ]
+}
+```
 
-| Flag | Purpose |
-|------|---------|
-| `--dry-run` | Preview what will be processed without API calls |
-| `--status` | Show cache status (what's done vs pending) |
-| `--validate` | Verify all scenes exist before processing |
-| `--resume` | Skip fully-cached scenes (explicit, bypasses auto-detect) |
+### 2. Process Each Chunk
+
+For each chunk where `cached: false`:
+- Generate line-by-line analysis following the prompt guidelines
+- Save to database with `--save-chunk <HASH>`
+
+Cached chunks are skipped automatically.
+
+### 3. Build Markdown
+
+After all chunks are processed:
+```bash
+scene_analyzer.py ... --build-from-cache
+```
+
+This assembles the final markdown file from all cached chunks.
+
+## Command Syntax
+
+```
+/gloss-play <play-file-or-name> "<Act N, Scene M>"
+```
+
+**Format detection:**
+- Contains `/` or ends with `.txt` → direct file path
+- Otherwise → play name (looks up script for file path)
 
 ### Examples
 
 ```bash
-# Preview before running
-/gloss-play henry-v --dry-run
+# Full file path
+/gloss-play ~/utono/literature/shakespeare-william/gutenberg/hamlet_gut.txt \
+    "Act III, Scene I"
 
-# Check progress
-/gloss-play henry-v --status
+# Play name (requires gloss-play_hamlet.sh to exist)
+/gloss-play hamlet "Act III, Scene I"
 
-# Validate script correctness
-/gloss-play henry-v --validate
-
-# Resume after interruption
-/gloss-play henry-v --resume
+# Twelfth Night opening
+/gloss-play twelfth-night "Act I, Scene I"
 ```
 
-### Output Location
+## Scene Analyzer Flags
 
-Glosses are saved to `~/utono/literature/glosses/<play-name>/`:
-- `act1_scene1_line-by-line.md`
-- `act1_scene2_line-by-line.md`
-- etc.
+| Flag | Purpose |
+|------|---------|
+| `--export-chunks` | Export chunk data as JSON |
+| `--save-chunk HASH` | Save analysis for chunk (reads from stdin) |
+| `--build-from-cache` | Build markdown from all cached chunks |
+| `--dry-run` | Preview chunks without processing |
+| `--status` | Show cache status only |
+| `--merge N` | Merge speeches into N-line chunks (default: 42) |
 
-## Typical Workflow
+## Typical Session
 
 ```bash
-# 1. Generate scripts for all plays (one-time setup)
-/analyze-plays ~/utono/literature/shakespeare-william/gutenberg/*.txt
+# Process Act I, Scene II of Twelfth Night
+/gloss-play twelfth-night "Act I, Scene II"
 
-# 2. Preview what Henry V will process
-/gloss-play henry-v --dry-run
-
-# 3. Run the analysis (auto-resumes if previously started)
-/gloss-play henry-v
-
-# 4. Check final status
-/gloss-play henry-v --status
+# Output:
+# Processed 3 chunks (all new, none cached)
+# Output: ~/utono/literature/glosses/twelfth-night/act1_scene2_line-by-line.md
 ```
 
-Note: Step 3 automatically detects cached scenes and uses `--resume` mode,
-so you can safely re-run `/gloss-play henry-v` after any interruption.
+If interrupted, re-running the same command skips cached chunks:
 
-## Error Handling
+```bash
+# Re-run after interruption
+/gloss-play twelfth-night "Act I, Scene II"
 
-Scripts track errors and report them at completion:
-- `[FAILED]` markers indicate scene failures
-- `[CLAUDE_ACTION_REQUIRED]` indicates intervention needed
-- `[SKIPPED]` markers (in resume mode) show cached scenes
+# Output:
+# Processed 3 chunks (2 cached, 1 new)
+```
 
-### Recovery
+## Generating Play Scripts
 
-1. **Check status**: `/gloss-play <name> --status`
-2. **Resume**: `/gloss-play <name> --resume`
-3. **Check logs**: `~/utono/nvim-glosses-qa/logs/scene_analyzer.log`
+Before using the play name shorthand, generate scripts with `/analyze-plays`:
+
+```bash
+# Generate scripts for all plays
+/analyze-plays ~/utono/literature/shakespeare-william/gutenberg/*.txt
+
+# Generate for single play
+/analyze-plays ~/utono/literature/.../twelfth_night_gut.txt
+```
+
+Scripts are saved to `~/utono/nvim-glosses-qa/scripts/`:
+- `gloss-play_twelfth-night.sh`
+- `gloss-play_hamlet.sh`
+- etc.
+
+The `/gloss-play` command extracts `PLAY_FILE` from these scripts when you
+use the play name format.
+
+## Output Format
+
+Each gloss provides for every line:
+- The line in **bold**
+- Literal meaning (1-2 sentences)
+- Operative word(s) with explanation
+- Acting insight (breath, emphasis, physical note)
+
+Speaker names appear in ALL CAPS before their lines when speakers change.
+
+### Example Output
+
+```markdown
+VIOLA.
+
+**"What country friends is this?"**
+
+Where am I? What land have we come to? The operative word is
+"country" — Viola wakes to disorientation, the shore alien and
+unnamed. "Friends" reaches toward the sailors, her only companions
+in this strange place. Let the line hang as genuine inquiry.
+
+CAPTAIN.
+
+**"This is Illyria lady."**
+
+We are in Illyria, my lady. "Illyria" lands as the operative —
+a name that locates and yet remains exotic, half-mythical.
+The Captain's answer is plain, almost flat — a serviceable
+response to a shipwrecked noblewoman.
+```
 
 ## File Locations
 
@@ -135,13 +173,37 @@ Scripts track errors and report them at completion:
 | Play source files | `~/utono/literature/shakespeare-william/gutenberg/` |
 | Generated scripts | `~/utono/nvim-glosses-qa/scripts/` |
 | Output glosses | `~/utono/literature/glosses/<play-name>/` |
-| Log file | `~/utono/nvim-glosses-qa/logs/scene_analyzer.log` |
 | Gloss database | `~/utono/literature/gloss.db` |
 
-## Notes
+## Processing Full Plays
 
-- Caching means reruns skip already-processed chunks
-- Safe to stop and restart - use `--resume` for efficient restart
-- Use `--validate` after script generation to catch errors early
-- Each scene is processed in chunks (speeches merged by line count)
-- Default merge threshold is 42 lines
+To process an entire play, run `/gloss-play` for each scene sequentially:
+
+```bash
+/gloss-play hamlet "Act I, Scene I"
+/gloss-play hamlet "Act I, Scene II"
+/gloss-play hamlet "Act I, Scene III"
+# ... etc.
+```
+
+The caching system ensures you can stop and resume at any point without
+re-processing completed scenes or chunks.
+
+## Troubleshooting
+
+**"Script not found" error:**
+Run `/analyze-plays` first to generate the play script.
+
+**Chunk save fails:**
+Check that the chunk hash matches exactly. The hash is shown in the
+`--export-chunks` JSON output.
+
+**Partial scene:**
+If interrupted mid-scene, re-run the same command. Cached chunks are
+skipped; only remaining chunks are processed.
+
+**Check scene status:**
+```bash
+python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
+    "<play-file>" "<act/scene>" --merge 42 --status
+```
