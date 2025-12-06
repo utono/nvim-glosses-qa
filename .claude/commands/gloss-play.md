@@ -1,14 +1,35 @@
-Generate line-by-line glosses for a play or specific scene.
+Generate line-by-line glosses for a play, act, or specific scene.
 
 **Arguments: $ARGUMENTS**
 
 ## Argument Formats
 
-The command accepts two formats:
-
-### Format 1: Direct play file with optional scene
+### Format 1: Play name with optional act/scene filter
 ```
-/gloss-play <play-file-path> ["Act N, Scene M"]
+/gloss-play <play-name> ["Act N" | "Act N, Scene M"] [--flags]
+```
+
+Examples:
+```
+# Entire play
+/gloss-play hamlet
+
+# Single act (all scenes in that act)
+/gloss-play hamlet "Act III"
+/gloss-play henry-v "Act 4"
+
+# Single scene
+/gloss-play hamlet "Act III, Scene I"
+/gloss-play twelfth-night "Act I, Scene V"
+
+# With flags
+/gloss-play macbeth --status
+/gloss-play hamlet "Act III" --dry-run
+```
+
+### Format 2: Direct play file with optional act/scene filter
+```
+/gloss-play <play-file-path> ["Act N" | "Act N, Scene M"]
 ```
 
 Examples:
@@ -16,33 +37,29 @@ Examples:
 # Entire play
 /gloss-play ~/utono/literature/.../romeo_and_juliet_gut.txt
 
-# Specific scene (various formats accepted)
+# Single act
+/gloss-play ~/utono/literature/.../hamlet_gut.txt "Act III"
+
+# Single scene
 /gloss-play ~/utono/literature/.../romeo_and_juliet_gut.txt "Act II, Scene II"
 /gloss-play ~/utono/literature/.../henry_v_gut.txt "Act 4, Scene 7"
-/gloss-play ~/utono/literature/.../hamlet_gut.txt "Act III Scene I"
-```
-
-### Format 2: Play name (uses pre-generated script)
-```
-/gloss-play <play-name> [--flags]
-```
-
-Examples:
-```
-/gloss-play henry-v
-/gloss-play hamlet --dry-run
-/gloss-play macbeth --status
 ```
 
 ## What This Does
 
-**For specific scene (Format 1 with act/scene):**
+**For specific scene:**
 1. Parses the act and scene from the specification
 2. Runs scene_analyzer.py directly for that single scene
 3. Generates line-by-line glosses for actor rehearsal
 
-**For entire play (Format 1 without act/scene or Format 2):**
-1. Determines script path or uses play file directly
+**For specific act (all scenes):**
+1. Parses the act number from the specification
+2. Queries the play file to find all scenes in that act
+3. Runs scene_analyzer.py for each scene in sequence
+4. Reports results for all scenes
+
+**For entire play:**
+1. Determines script path from play name or file
 2. Checks cache status (if no flags provided)
 3. Auto-adds `--resume` if cached scenes exist
 4. Runs the script with flags
@@ -50,7 +67,17 @@ Examples:
 
 ## Parsing the Act/Scene Specification
 
-Accept flexible formats for the scene specification:
+Accept flexible formats:
+
+**Act-only (all scenes in act):**
+
+| Input | Act | Scene |
+|-------|-----|-------|
+| `"Act III"` | 3 | all |
+| `"Act 4"` | 4 | all |
+| `"act 1"` | 1 | all |
+
+**Specific scene:**
 
 | Input | Act | Scene |
 |-------|-----|-------|
@@ -62,91 +89,100 @@ Accept flexible formats for the scene specification:
 
 Roman numerals: I=1, II=2, III=3, IV=4, V=5, VI=6, VII=7
 
+**Detection logic:** If input contains "Scene" → specific scene; otherwise → act-only
+
 ## Steps to Execute
 
 ### Step 1: Parse arguments
 
-Determine which format is being used:
+**Identify format:**
 
-**If first argument contains `/` or ends with `.txt`** → Format 1 (direct file)
-- Extract file path (first argument)
-- Check if second argument exists and looks like act/scene spec
-- If act/scene spec found → single scene mode
-- If no act/scene spec → entire play mode
+- First arg contains `/` or ends with `.txt` → Format 2 (direct file path)
+- Otherwise → Format 1 (play name)
 
-**Otherwise** → Format 2 (play name with script)
-- Treat as play name, construct script path
-- Remaining arguments are flags
+**Identify mode:**
 
-### Step 2a: Single Scene Mode (Format 1 with act/scene)
+- Second arg contains "Scene" → **single scene mode**
+- Second arg contains "Act" but not "Scene" → **act-only mode**
+- No act/scene arg (or only flags) → **entire play mode**
 
-Parse the act/scene specification:
+**Examples:**
 ```
-# Extract act number (convert Roman to Arabic if needed)
-# Extract scene number (convert Roman to Arabic if needed)
+hamlet                        → Format 1, entire play
+hamlet "Act III"              → Format 1, act-only (act 3)
+hamlet "Act III, Scene I"     → Format 1, single scene
+hamlet --status               → Format 1, entire play with flag
+~/path/play.txt               → Format 2, entire play
+~/path/play.txt "Act 2"       → Format 2, act-only (act 2)
+~/path/play.txt "Act 2 Sc 3"  → Format 2, single scene
 ```
 
-Verify the play file exists.
+### Step 2: Resolve play file path
 
-Run scene_analyzer.py directly:
+**For Format 1 (play name):**
+```bash
+# Find the play file from the gloss script
+SCRIPT=~/utono/nvim-glosses-qa/scripts/gloss-play_<play-name>.sh
+# Extract PLAY_FILE from script: grep "^PLAY_FILE=" "$SCRIPT"
+```
+
+**For Format 2 (direct path):**
+- Use the provided path directly
+
+Verify the play file exists before proceeding.
+
+### Step 3: Parse act/scene specification
+
+Convert Roman numerals to Arabic: I=1, II=2, III=3, IV=4, V=5, VI=6, VII=7
+
+**For single scene mode:**
+- Extract act number and scene number
+
+**For act-only mode:**
+- Extract act number
+- Find all scenes in that act:
+```bash
+rg "^SCENE [IVXLC]+\." "<play-file>" | rg "ACT <N>" -A1 | \
+    rg "^SCENE" | sed 's/SCENE //' | cut -d'.' -f1
+```
+  Or parse the script for scene numbers in that act.
+
+### Step 4: Execute based on mode
+
+**Single scene mode:**
 ```bash
 python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
     "<play-file>" <act> <scene> --merge 42
 ```
 
-Report the result and output location.
+**Act-only mode:**
+For each scene in the act:
+```bash
+python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
+    "<play-file>" <act> <scene> --merge 42
+```
+Run sequentially, report progress after each scene.
 
-### Step 2b: Entire Play Mode (Format 1 without act/scene or Format 2)
+**Entire play mode:**
+1. Check if script exists:
+   `~/utono/nvim-glosses-qa/scripts/gloss-play_<play-name>.sh`
+2. If no flags provided, check cache status:
+   ```bash
+   <script-path> --status
+   ```
+3. Auto-add `--resume` if cached scenes exist
+4. Run the script:
+   ```bash
+   <script-path> <flags>
+   ```
 
-**For Format 1 (direct file path):**
-- Derive play name from filename
-  (e.g., `romeo_and_juliet_gut.txt` → `romeo-and-juliet`)
-- Look for matching script in `~/utono/nvim-glosses-qa/scripts/`
-- If no script found, inform user to run `/analyze-plays` first
+### Step 5: Handle script not found (entire play mode)
 
-**For Format 2 (play name):**
-- Construct script path: `~/utono/nvim-glosses-qa/scripts/gloss-play_<name>.sh`
-
-### Step 3: Verify script/file exists
-
-For single scene mode: verify play file exists.
-For entire play mode: verify script exists.
-
-If not found, list available options:
+If no script exists for the play name:
 ```bash
 ls ~/utono/nvim-glosses-qa/scripts/gloss-play_*.sh
 ```
-
-### Step 4: Auto-detect cached scenes (entire play mode only)
-
-**Skip if user provided flags or in single scene mode.**
-
-Run the script with `--status` to check cache state:
-```bash
-<script-path> --status
-```
-
-Parse output for:
-- "Cached: N scenes"
-- "Pending: M scenes"
-
-**Decision logic:**
-- Cached > 0 AND Pending > 0: Add `--resume` flag automatically
-- Cached > 0 AND Pending = 0: Report "All scenes cached" and stop
-- Cached = 0: Run normally
-
-### Step 5: Run the command
-
-**Single scene:**
-```bash
-python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
-    "<play-file>" <act> <scene> --merge 42
-```
-
-**Entire play:**
-```bash
-<script-path> <flags>
-```
+Suggest running `/analyze-plays` to generate the script.
 
 ### Step 6: Monitor and report
 
@@ -183,11 +219,19 @@ If scene analysis fails:
 ## Examples
 
 ```
-# Single scene - the balcony scene
+# Single scene by play name
+/gloss-play hamlet "Act III, Scene I"
+/gloss-play twelfth-night "Act I, Scene V"
+
+# Single act by play name (processes all scenes in act)
+/gloss-play hamlet "Act III"
+/gloss-play henry-v "Act 4"
+
+# Single scene by file path
 /gloss-play ~/utono/literature/.../romeo_and_juliet_gut.txt "Act II, Scene II"
 
-# Single scene - Henry V before Agincourt
-/gloss-play ~/utono/literature/.../henry_v_gut.txt "Act IV, Scene I"
+# Single act by file path
+/gloss-play ~/utono/literature/.../hamlet_gut.txt "Act III"
 
 # Entire play by file path
 /gloss-play ~/utono/literature/.../hamlet_gut.txt
