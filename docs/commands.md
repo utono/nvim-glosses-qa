@@ -25,6 +25,7 @@ Claude Q&A terminal (opened with `<M-c>` from nvim-glosses).
 | `/gloss-play` | Generate glosses for a play scene (in-session) |
 | `/gloss-sounds` | Generate sound analysis for a play scene |
 | `/analyze-plays` | Generate gloss-play scripts for all plays |
+| `/teacher-gloss` | Generate glosses in acting teacher's voice |
 
 ---
 
@@ -398,6 +399,85 @@ emotional moments, and passages difficult to voice.
 
 ---
 
+### /teacher-gloss
+
+Generate line-by-line glosses for a Shakespeare scene in the distinctive voice
+and methodology of a classical acting teacher.
+
+**Usage:**
+```
+/teacher-gloss /path/to/play.txt "Act II, Scene I"
+/teacher-gloss /path/to/hamlet.txt "3 1"
+/teacher-gloss /path/to/tempest.txt "Act I"
+```
+
+**Arguments:**
+1. **Play file path** (required): Full path to the play text file
+2. **Scene filter** (required): Act and scene specification
+   - Formats: `"Act II, Scene I"`, `"Act 2, Scene 1"`, or `"2 1"`
+   - Prologues: `"Act II, Prologue"` or `"2 0"`
+   - Entire act: `"Act II"` or just `"2"`
+
+**Teacher Selection:**
+After running the command, you'll be prompted to select one or more teachers
+(multi-select enabled):
+
+1. **Peter Hall** (RSC founder, verse specialist)
+   - Focus: iambic pentameter as heartbeat, honoring line endings, caesura,
+     thought and breath alignment
+   - Phrases: "Honor the line ending", "The verse tells you where to breathe",
+     "Land that word"
+
+2. **John Barton** (RSC director, *Playing Shakespeare* author)
+   - Focus: antithesis, rhetoric as character, operative words, argument
+     structure
+   - Phrases: "Find the antithesis", "The rhetoric IS the character",
+     "Balance the oppositions"
+
+3. **Patsy Rodenburg** (Voice and presence expert)
+   - Focus: three circles of energy, owning the text, presence, connection
+     to the word
+   - Phrases: "Stay in Second Circle", "Own that word", "Let it land in
+     the room"
+
+**Multiple Teachers:**
+If you select multiple teachers, the command processes the scene once per
+teacher, generating separate output files:
+- `act2_scene1_teacher-hall.md`
+- `act2_scene1_teacher-barton.md`
+- `act2_scene1_teacher-rodenburg.md`
+
+**Workflow:**
+1. Export chunks: `scene_analyzer.py --export-chunks --gloss-type teacher-X`
+2. Process each non-cached chunk with teacher-specific prompt
+3. Save chunks: `scene_analyzer.py --save-chunk <hash> --gloss-type teacher-X`
+4. Build markdown: `scene_analyzer.py --build-from-cache --gloss-type teacher-X`
+
+**Output format per line:**
+1. Line quoted in **bold**
+2. Plain meaning (1-2 sentences)
+3. Teacher-specific analysis (verse/rhetoric/energy)
+4. Performance note in the teacher's voice
+
+**Output:** `~/utono/literature/glosses/<play>/act<N>_scene<M>_teacher-<name>.md`
+
+**Example header in output:**
+```markdown
+# Henry V - Act II, Scene I
+## Line-by-Line Analysis in the Voice of John Barton
+
+*"The rhetoric IS the character. Find the antithesis."*
+
+---
+```
+
+**When to use:**
+- Actor rehearsal preparation with specific methodological focus
+- Comparing different pedagogical approaches to the same text
+- Deep verse work (Hall), argument structure (Barton), or presence (Rodenburg)
+
+---
+
 ### /analyze-plays
 
 Generate gloss-play scripts for all Shakespeare plays.
@@ -504,7 +584,8 @@ Available in the Q&A session:
 1. Run `/analyze-plays` to generate scripts for all plays (one-time setup)
 2. Use `/gloss-play <play> "Act N, Scene M"` to generate line-by-line glosses
 3. Use `/gloss-sounds <play> "Act N, Scene M"` for sound analysis
-4. Output files appear in `~/utono/literature/glosses/<play>/`
+4. Use `/teacher-gloss <play> "Act N, Scene M"` for teacher-voice analysis
+5. Output files appear in `~/utono/literature/glosses/<play>/`
 
 ### Quick Line Analysis (in Q&A session)
 

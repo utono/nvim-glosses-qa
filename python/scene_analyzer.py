@@ -337,25 +337,45 @@ class PlayParser:
                     self.character_names.add('CHOR')
 
     def _scan_for_speakers(self) -> None:
-        """Scan play text to find speaker patterns when no cast list exists.
+        """Scan play text to find speaker patterns.
 
-        Falls back to detecting ALL CAPS names followed by period.
+        Detects both ALL CAPS (Henry V) and Title Case (Romeo and Juliet).
         """
-        # Pattern for ALL CAPS speaker (safe fallback)
+        # Pattern for ALL CAPS speaker (e.g., "SAMPSON.")
         all_caps_pattern = re.compile(r'^([A-Z][A-Z\s]+)\.\s*$')
+
+        # Pattern for Title Case speaker (e.g., "Sampson.", "Lady Capulet.")
+        # Matches: Capital letter + lowercase, optionally followed by more
+        # capitalized words
+        title_case_pattern = re.compile(
+            r'^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\.\s*$'
+        )
 
         for line in self.lines:
             stripped = line.strip()
             if len(stripped) > 30:
                 continue
+
+            # Try ALL CAPS first
             match = all_caps_pattern.match(stripped)
             if match:
                 name = match.group(1).strip()
                 # Skip ACT/SCENE markers
                 if not (name.startswith('ACT') or name.startswith('SCENE')):
                     self.character_names.add(name)
+                continue
 
-        logger.debug(f"Scanned {len(self.character_names)} speaker names from text")
+            # Try Title Case
+            match = title_case_pattern.match(stripped)
+            if match:
+                name = match.group(1).strip()
+                # Convert to upper for consistent storage
+                name_upper = name.upper()
+                if not (name_upper.startswith('ACT') or
+                        name_upper.startswith('SCENE')):
+                    self.character_names.add(name_upper)
+
+        logger.debug(f"Scanned {len(self.character_names)} speaker names")
 
     def _is_speaker_line(self, line: str) -> Optional[str]:
         """Check if a line is a speaker designation.
