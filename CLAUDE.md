@@ -375,6 +375,12 @@ sustained examinations of the word.
 **Keep the recommendation brief** - the user can ask for more with "discuss".
 Don't overload every response; flag 1-2 significant terms maximum.
 
+## Keybind Documentation
+
+**ALWAYS update keybind documentation after any keybind changes:**
+- `~/utono/nvim-glosses/docs/keybinds.md` - for nvim-glosses keybinds
+- `~/utono/xc/docs/keybinds.md` - for XC keybinds
+
 ## Available Slash Commands
 
 | Command | Description |
