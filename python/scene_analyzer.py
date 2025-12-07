@@ -734,11 +734,13 @@ class SceneAnalyzer:
         self.play_name = self.play_file.stem.replace('_gut', '').replace('_', '-')
 
     def _merge_speeches_into_chunks(self, speeches: list[Speech]) -> list[SpeechChunk]:
-        """Merge consecutive small speeches into larger chunks.
+        """Merge consecutive speeches into larger chunks for processing.
 
-        Speeches are never split - each speech stays intact. Chunks are closed
-        when adding the next speech would exceed the threshold, ensuring a
-        character's dialogue is always analyzed as a complete unit.
+        Chunking rules:
+        - A single speech (monologue) is NEVER split, regardless of length
+        - Multiple speeches are grouped until adding another would exceed threshold
+        - Threshold only applies when deciding whether to ADD another speech
+        - This ensures monologues stay intact while dialogue gets grouped efficiently
 
         Args:
             speeches: List of individual Speech objects.
@@ -758,10 +760,14 @@ class SceneAnalyzer:
         current_lines = 0
 
         for speech in speeches:
-            # Check if adding this speech would exceed threshold
-            # (but always include at least one speech per chunk)
-            if current_speeches and current_lines + speech.line_count > self.merge_threshold:
-                # Close current chunk before adding this speech
+            # Monologue rule: A chunk with one speech can exceed threshold
+            # (we never split a single character's continuous dialogue)
+            # Multi-speech rule: Close chunk before exceeding threshold
+            is_monologue = len(current_speeches) == 0
+            would_exceed = current_lines + speech.line_count > self.merge_threshold
+
+            if not is_monologue and would_exceed:
+                # Close current chunk - multiple speeches would exceed threshold
                 combined_text = "\n\n".join(s.text.rstrip() for s in current_speeches)
                 chunks.append(SpeechChunk(
                     speeches=current_speeches,
@@ -771,6 +777,7 @@ class SceneAnalyzer:
                 current_lines = 0
 
             # Add speech to current chunk
+            # (always succeeds - monologues can exceed threshold)
             current_speeches.append(speech)
             current_lines += speech.line_count
 
