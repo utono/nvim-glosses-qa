@@ -164,16 +164,25 @@ class PlayParser:
     """Parse a play file to extract scenes and speeches."""
 
     # Patterns for play structure
-    # ACT pattern matches Roman numerals (ACT IV.), Arabic (ACT 1.), and words (ACT FIRST.)
+    # ACT pattern matches Roman numerals (ACT IV.), Arabic (ACT 1.), words (ACT FIRST.)
+    # Also matches First Folio Latin: "Actus Primus." etc.
     ACT_PATTERN = re.compile(
-        r'^ACT\s+([IVX]+|\d+|FIRST|SECOND|THIRD|FOURTH|FIFTH)\.?\s*$',
+        r'^(?:ACT|ACTUS)\s+([IVX]+|\d+|FIRST|SECOND|THIRD|FOURTH|FIFTH|'
+        r'PRIMUS|SECUNDUS|TERTIUS|QUARTUS|QUINTUS)\.?\s*$',
         re.IGNORECASE
     )
-    # SCENE pattern matches both Roman (SCENE I.) and Arabic (SCENE 1.)
-    SCENE_PATTERN = re.compile(r'^SCENE\s+([IVX]+|\d+)[\.\s:](.*)$', re.IGNORECASE)
-    # Combined ACT + SCENE on same line (e.g., "ACT IV. SCENE I. Location.")
+    # SCENE pattern matches Roman (SCENE I.), Arabic (SCENE 1.), and First Folio Latin
+    SCENE_PATTERN = re.compile(
+        r'^(?:SCENE|SC[OE]?ENA)\s+([IVX]+|\d+|'
+        r'PRIMA|SECUNDA|TERTIA|QUARTA|QUINTA|SEXTA|SEPTIMA|OCTAVA|NONA|DECIMA)[\.\s:]?(.*)$',
+        re.IGNORECASE
+    )
+    # Combined ACT + SCENE on same line (e.g., "ACT IV. SCENE I." or "Actus Primus. Scoena Prima.")
     ACT_SCENE_COMBINED_PATTERN = re.compile(
-        r'^ACT\s+([IVX]+|\d+|FIRST|SECOND|THIRD|FOURTH|FIFTH)\.?\s*SCENE\s+([IVX]+|\d+)[\.\s:](.*)$',
+        r'^(?:ACT|ACTUS)\s+([IVX]+|\d+|FIRST|SECOND|THIRD|FOURTH|FIFTH|'
+        r'PRIMUS|SECUNDUS|TERTIUS|QUARTUS|QUINTUS)\.?\s*'
+        r'(?:SCENE|SC[OE]?ENA)\s+([IVX]+|\d+|'
+        r'PRIMA|SECUNDA|TERTIA|QUARTA|QUINTA|SEXTA|SEPTIMA|OCTAVA|NONA|DECIMA)[\.\s:]?(.*)$',
         re.IGNORECASE
     )
     PROLOGUE_PATTERN = re.compile(r'^PROLOGUE\.?\s*$', re.IGNORECASE)
@@ -185,9 +194,14 @@ class PlayParser:
     )
     STAGE_DIR_PATTERN = re.compile(r'^\[.*\]\s*$')
 
-    # Ordinal words to integers
+    # Ordinal words to integers (English and Latin)
     ORDINAL_TO_INT = {
-        'FIRST': 1, 'SECOND': 2, 'THIRD': 3, 'FOURTH': 4, 'FIFTH': 5
+        'FIRST': 1, 'SECOND': 2, 'THIRD': 3, 'FOURTH': 4, 'FIFTH': 5,
+        # Latin ordinals for acts (masculine)
+        'PRIMUS': 1, 'SECUNDUS': 2, 'TERTIUS': 3, 'QUARTUS': 4, 'QUINTUS': 5,
+        # Latin ordinals for scenes (feminine)
+        'PRIMA': 1, 'SECUNDA': 2, 'TERTIA': 3, 'QUARTA': 4, 'QUINTA': 5,
+        'SEXTA': 6, 'SEPTIMA': 7, 'OCTAVA': 8, 'NONA': 9, 'DECIMA': 10,
     }
 
     def __init__(self, play_file: Path):
@@ -206,6 +220,86 @@ class PlayParser:
         """Load play file into memory."""
         with open(self.play_file, 'r', encoding='utf-8') as f:
             self.lines = f.readlines()
+
+    def _detect_format(self) -> str:
+        """Detect the format of the play text.
+
+        Returns:
+            'folio_full' - Has Latin headers AND multiple scene markers (5+)
+            'folio_minimal' - Has Latin headers BUT only 1-4 markers
+            'modern' - Has English ACT/SCENE markers
+            'unmarked' - No act/scene markers found
+        """
+        latin_count = 0
+        english_count = 0
+
+        for line in self.lines:
+            stripped = line.strip()
+            # Count Latin markers (Actus, Scena, Scoena)
+            if re.match(r'^(Actus|Scoena|Scena)\s+', stripped, re.IGNORECASE):
+                latin_count += 1
+            # Also check for combined "Actus... Scoena..." on one line
+            elif re.match(r'^Actus\s+\w+.*Sco?ena', stripped, re.IGNORECASE):
+                latin_count += 1
+            # Count English markers
+            elif re.match(r'^ACT\s+', stripped, re.IGNORECASE):
+                english_count += 1
+            elif re.match(r'^SCENE\s+', stripped, re.IGNORECASE):
+                english_count += 1
+
+        if latin_count >= 5:
+            return 'folio_full'
+        elif latin_count >= 1:
+            return 'folio_minimal'
+        elif english_count >= 1:
+            return 'modern'
+        return 'unmarked'
+
+    def _infer_scene_boundaries(self) -> dict[int, tuple[int, int]]:
+        """Infer scene boundaries from Exeunt/Enter patterns.
+
+        For minimally-marked First Folio texts, scenes are inferred from
+        stage directions: "Exeunt." followed by "Enter" indicates a scene
+        change.
+
+        Returns:
+            Dict mapping scene number (1-based) to (start_line, end_line)
+            where lines are 0-indexed.
+        """
+        scenes = {}
+        scene_num = 1
+        scene_start = 0
+
+        # Find the first Enter (start of Scene 1)
+        for i, line in enumerate(self.lines):
+            stripped = line.strip()
+            if stripped.startswith('Enter '):
+                scene_start = i
+                break
+
+        for i, line in enumerate(self.lines):
+            stripped = line.strip()
+
+            # Scene ends at "Exeunt." (full cast exit)
+            # Match: "Exeunt.", "Exeunt omnes.", "Exeunt omnes"
+            if re.match(r'^Exeunt\.?$', stripped) or \
+               re.match(r'^Exeunt omnes\.?$', stripped, re.IGNORECASE):
+                # Look for "Enter" within next 5 lines
+                found_enter = False
+                for j in range(i + 1, min(i + 6, len(self.lines))):
+                    next_line = self.lines[j].strip()
+                    if next_line.startswith('Enter '):
+                        scenes[scene_num] = (scene_start, i)
+                        scene_num += 1
+                        scene_start = j
+                        found_enter = True
+                        break
+
+        # Final scene goes to end of file
+        scenes[scene_num] = (scene_start, len(self.lines) - 1)
+
+        logger.debug(f"Inferred {len(scenes)} scene boundaries")
+        return scenes
 
     def _parse_cast_list(self) -> None:
         """Parse the cast list (Dramatis Personae) to extract character names.
@@ -453,25 +547,31 @@ class PlayParser:
         return self._roman_to_int(act_upper)
 
     def _normalize_scene(self, scene_str: str) -> int:
-        """Normalize scene string (Roman or Arabic numeral) to integer.
+        """Normalize scene string (Roman, Arabic, or Latin ordinal) to integer.
 
         Args:
-            scene_str: Scene identifier like 'III', '3', 'IV', etc.
+            scene_str: Scene identifier like 'III', '3', 'IV', 'SECUNDA', etc.
 
         Returns:
             Integer scene number.
         """
-        scene_str = scene_str.strip()
+        scene_str = scene_str.strip().upper()
         if scene_str.isdigit():
             return int(scene_str)
+        # Check for Latin ordinals (PRIMA, SECUNDA, etc.)
+        if scene_str in self.ORDINAL_TO_INT:
+            return self.ORDINAL_TO_INT[scene_str]
         return self._roman_to_int(scene_str)
 
-    def find_scene(self, act: int, scene: int) -> tuple[int, int]:
+    def find_scene(self, act: int, scene: int,
+                   infer_scenes: bool = False) -> tuple[int, int]:
         """Find the start and end line numbers for a scene.
 
         Args:
             act: Act number (integer), or 0 for opening prologue
             scene: Scene number (integer), or 0 for prologue
+            infer_scenes: If True, use structural inference for minimally-marked
+                          First Folio texts
 
         Returns:
             Tuple of (start_line, end_line) as 0-indexed line numbers.
@@ -484,6 +584,17 @@ class PlayParser:
             return self._find_prologue(act)
         if scene == -1:
             return self._find_epilogue()
+
+        # For minimally-marked First Folio texts, use structural inference
+        format_type = self._detect_format()
+        if format_type == 'folio_minimal' and infer_scenes:
+            boundaries = self._infer_scene_boundaries()
+            if scene in boundaries:
+                logger.info(f"Using inferred scene boundary for scene {scene}")
+                return boundaries[scene]
+            raise ValueError(
+                f"Inferred scene {scene} not found (available: 1-{len(boundaries)})"
+            )
 
         # Use integer comparison for flexibility with different formats
         target_act = act
@@ -703,7 +814,8 @@ class SceneAnalyzer:
 
     def __init__(self, play_file: Path, act: int, scene: int,
                  output_dir: Path = None, merge_threshold: int = 0,
-                 retry_count: int = 3, retry_delay: int = 30):
+                 retry_count: int = 3, retry_delay: int = 30,
+                 infer_scenes: bool = False):
         """Initialize scene analyzer.
 
         Args:
@@ -715,6 +827,8 @@ class SceneAnalyzer:
                            this threshold is reached. 0 = no merging.
             retry_count: Number of times to retry failed API calls.
             retry_delay: Initial delay in seconds between retries (exponential).
+            infer_scenes: If True, infer scene boundaries for minimally-marked
+                         First Folio texts using Exeunt/Enter patterns.
         """
         self.play_file = Path(play_file)
         self.act = act
@@ -724,6 +838,7 @@ class SceneAnalyzer:
         self.merge_threshold = merge_threshold
         self.retry_count = retry_count
         self.retry_delay = retry_delay
+        self.infer_scenes = infer_scenes
         self.db = GlossDatabase()
         self.db.setup()  # Ensure tables exist
 
@@ -1068,7 +1183,9 @@ class SceneAnalyzer:
                        f"Scene {self.scene}...")
 
         # Find scene boundaries
-        start_line, end_line = self.parser.find_scene(self.act, self.scene)
+        start_line, end_line = self.parser.find_scene(
+            self.act, self.scene, infer_scenes=self.infer_scenes
+        )
         scene_header = self.parser.lines[start_line].strip()
         logger.info(f"Found scene at lines {start_line}-{end_line}: {scene_header}")
 
@@ -1200,7 +1317,9 @@ class SceneAnalyzer:
             Dictionary with scene info and chunks ready for processing.
         """
         # Find scene boundaries
-        start_line, end_line = self.parser.find_scene(self.act, self.scene)
+        start_line, end_line = self.parser.find_scene(
+            self.act, self.scene, infer_scenes=self.infer_scenes
+        )
         scene_header = self.parser.lines[start_line].strip()
 
         # Extract speeches
@@ -1448,6 +1567,12 @@ Examples:
         metavar='TYPE',
         help='Gloss type for caching/output (default: line-by-line, also: sounds)'
     )
+    parser.add_argument(
+        '--infer-scenes',
+        action='store_true',
+        help='For minimally-marked First Folio texts, infer scene boundaries '
+             'from Exeunt/Enter patterns instead of explicit markers'
+    )
 
     args = parser.parse_args()
 
@@ -1505,7 +1630,9 @@ Examples:
     if args.validate:
         try:
             parser = PlayParser(args.play_file)
-            start_line, end_line = parser.find_scene(act, scene)
+            start_line, end_line = parser.find_scene(
+                act, scene, infer_scenes=args.infer_scenes
+            )
             scene_header = parser.lines[start_line].strip()
             print(f"✓ {scene_label} - found at line {start_line + 1}: {scene_header}")
             sys.exit(0)
@@ -1533,7 +1660,8 @@ Examples:
                 output_dir=args.output_dir,
                 merge_threshold=args.merge,
                 retry_count=args.retry,
-                retry_delay=args.retry_delay
+                retry_delay=args.retry_delay,
+                infer_scenes=args.infer_scenes
             )
             chunk_data = analyzer.export_chunks(gloss_type=args.gloss_type)
             print(json.dumps(chunk_data, indent=2))
@@ -1563,7 +1691,8 @@ Examples:
                 output_dir=args.output_dir,
                 merge_threshold=args.merge,
                 retry_count=args.retry,
-                retry_delay=args.retry_delay
+                retry_delay=args.retry_delay,
+                infer_scenes=args.infer_scenes
             )
 
             # Find the chunk with matching hash
@@ -1629,7 +1758,8 @@ Examples:
                 output_dir=args.output_dir,
                 merge_threshold=args.merge,
                 retry_count=args.retry,
-                retry_delay=args.retry_delay
+                retry_delay=args.retry_delay,
+                infer_scenes=args.infer_scenes
             )
 
             # Get chunk data to check cache status
@@ -1654,7 +1784,9 @@ Examples:
 
             # Build the markdown document from cached analyses
             # Re-create chunk objects for formatting
-            start_line, end_line = analyzer.parser.find_scene(act, scene)
+            start_line, end_line = analyzer.parser.find_scene(
+                act, scene, infer_scenes=analyzer.infer_scenes
+            )
             scene_header = analyzer.parser.lines[start_line].strip()
             speeches = analyzer.parser.extract_speeches(start_line, end_line)
             chunks = analyzer._merge_speeches_into_chunks(speeches)
@@ -1691,7 +1823,8 @@ Examples:
             output_dir=args.output_dir,
             merge_threshold=args.merge,
             retry_count=args.retry,
-            retry_delay=args.retry_delay
+            retry_delay=args.retry_delay,
+            infer_scenes=args.infer_scenes
         )
 
         output_path = analyzer.analyze(
