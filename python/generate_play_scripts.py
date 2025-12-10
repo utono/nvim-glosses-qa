@@ -118,10 +118,13 @@ def analyze_play_structure(filepath: str) -> Dict:
             else:
                 act_num = roman_to_int(act_str)
             current_act = act_num
-            structure['acts'][act_num] = {
-                'has_prologue': False,
-                'scenes': []
-            }
+            # Only create act entry if it doesn't exist (some Gutenberg files
+            # repeat "ACT I." before each scene)
+            if act_num not in structure['acts']:
+                structure['acts'][act_num] = {
+                    'has_prologue': False,
+                    'scenes': []
+                }
 
         # Check for scene marker - support both roman (I, II) and arabic (1, 2), with or without period
         # Case insensitive to handle "Scene I." and "SCENE I."

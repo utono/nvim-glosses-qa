@@ -7,13 +7,15 @@ discussion, operative words, or acting notes.
 ## Argument Format
 
 ```
-/line-translations <play-file.txt> "Act N, Scene M"
+/line-translations <play-file.txt>                    # List scenes
+/line-translations <play-file.txt> "Act N"            # All scenes in act
+/line-translations <play-file.txt> "Act N, Scene M"   # Single scene
 ```
 
 Examples:
 ```
-/line-translations ~/utono/literature/shakespeare-william/gutenberg/romeo_and_juliet_gut.txt "Act I, Scene I"
-/line-translations ~/utono/literature/shakespeare-william/gutenberg/twelfth_night_gut.txt "Act I, Scene V"
+/line-translations ~/utono/literature/shakespeare-william/gutenberg/hamlet_gut.txt
+/line-translations ~/utono/literature/shakespeare-william/gutenberg/hamlet_gut.txt "Act III"
 /line-translations ~/utono/literature/shakespeare-william/gutenberg/hamlet_gut.txt "Act III, Scene I"
 ```
 
@@ -32,12 +34,29 @@ NOT write to the glosses table and does NOT generate markdown output.
 
 ## Steps to Execute
 
-### Step 1: Parse arguments
+### Step 1: Parse arguments and identify scenes
 
-Extract play file path and act/scene from arguments.
+Extract play file path and optional act/scene from arguments.
 
-The first argument must be a path to a `.txt` play file.
-The second argument is the act/scene spec (e.g., "Act I, Scene V").
+**If only a file path is given** (no act/scene spec), run the translation
+status script to list all scenes and their translation status:
+
+```bash
+python ~/utono/nvim-glosses-qa/python/translation_status.py "<play-file>"
+```
+
+Then ask the user which scene(s) to process. Accept:
+- "Act N" - process all scenes in that act
+- "Act N, Scene M" - process single scene
+- "first act" / "act 1" / similar variations - process Act I
+
+**If an act is specified without a scene** (e.g., "Act III" or "first act"):
+1. Get the scene list for that act
+2. Process each scene sequentially
+3. Report cumulative results
+
+**If a full scene spec is given** (e.g., "Act III, Scene I"):
+Continue to Step 2.
 
 ### Step 2: Export chunks
 
@@ -212,8 +231,12 @@ After completion:
 ## Examples
 
 ```
+# List all scenes in a play
+/line-translations ~/utono/literature/shakespeare-william/gutenberg/hamlet_gut.txt
+
+# Process entire act
+/line-translations ~/utono/literature/shakespeare-william/gutenberg/hamlet_gut.txt "Act III"
+
 # Single scene
-/line-translations ~/utono/literature/shakespeare-william/gutenberg/romeo_and_juliet_gut.txt "Act I, Scene I"
 /line-translations ~/utono/literature/shakespeare-william/gutenberg/hamlet_gut.txt "Act III, Scene I"
-/line-translations ~/utono/literature/shakespeare-william/gutenberg/henry_v_gut.txt "Act IV, Scene VII"
 ```
