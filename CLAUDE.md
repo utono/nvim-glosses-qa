@@ -36,8 +36,8 @@ share a text-first philosophy: the answers are in the language itself.
 
 ## Database Access
 
-The gloss database contains the user's translations, Elizabethan term
-definitions, and prior Q&A discussions.
+The gloss database contains the user's passages, translations, and prior Q&A
+discussions.
 
 **Database location:** `~/utono/literature/gloss.db`
 
@@ -48,46 +48,87 @@ definitions, and prior Q&A discussions.
 - `$ACT` - Act number (if known)
 - `$SCENE` - Scene number (if known)
 
-## Database Queries for Terms
+## Database Schema
 
-When you need to look up an Elizabethan term, use this query:
+The database uses a normalized structure with these tables:
 
+### Gloss System (for ~/.config/nvim-glosses viewer)
+
+**passages** - Source texts with metadata
+- `id`, `hash`, `source_text`, `source_file`, `tag`, `line_number`
+- `character`, `act`, `scene`, `play_name`, `file_path`
+
+**glosses** - Analyses linked to passages
+- `id`, `passage_id` (FK), `gloss_type`, `gloss_text`, `gloss_file`
+- `gloss_type` values: 'line-by-line', 'teacher-hall', 'teacher-barton', etc.
+
+**addenda** - Q&A discussions linked to passages
+- `id`, `passage_id` (FK), `question`, `answer`, `timestamp`
+
+### Line Translation System (for ~/utono/xc/nvim viewer)
+
+**line_translations** - Per-line translations
+- `source_file`, `line_number`, `original_text`, `translation`
+- `character`, `play_name`, `act`, `scene`, `chunk_hash`
+
+### Media Sync System
+
+**media_files** - Media file references
+- `id`, `path`, `duration_seconds`, `transcript_source`, `json_path`
+
+**line_timestamps** - Media sync timestamps
+- `media_id` (FK), `text_file`, `line_number`, `start_time`, `end_time`
+
+## Database Queries
+
+### Find passages containing a word
 ```bash
 sqlite3 ~/utono/literature/gloss.db \
-  "SELECT term, category, significance FROM elizabethan_terms
-   WHERE term = '<word>' AND approved = 1"
+  "SELECT p.source_text, g.gloss_text FROM passages p
+   LEFT JOIN glosses g ON g.passage_id = p.id
+   WHERE p.source_text LIKE '%<word>%' LIMIT 5"
 ```
 
-Only query the database when explicitly requested via `/lookup` or when you
-genuinely need term definitions to answer the user's question.
-
-## Other Database Queries
-
-### Find other glosses containing a word
+### Find prior Q&A discussions of this passage
 ```bash
 sqlite3 ~/utono/literature/gloss.db \
-  "SELECT source_text, gloss_text FROM glosses
-   WHERE source_text LIKE '%<word>%' LIMIT 5"
-```
-
-### Find prior discussions of this passage
-```bash
-sqlite3 ~/utono/literature/gloss.db "SELECT answer FROM addenda WHERE gloss_hash = '\$GLOSS_HASH' ORDER BY timestamp"
+  "SELECT a.question, a.answer FROM addenda a
+   JOIN passages p ON a.passage_id = p.id
+   WHERE p.hash = '\$GLOSS_HASH' ORDER BY a.timestamp"
 ```
 
 ### Get the user's existing translation
 ```bash
-sqlite3 ~/utono/literature/gloss.db "SELECT gloss_text FROM glosses WHERE hash = '\$GLOSS_HASH'"
+sqlite3 ~/utono/literature/gloss.db \
+  "SELECT g.gloss_text FROM glosses g
+   JOIN passages p ON g.passage_id = p.id
+   WHERE p.hash = '\$GLOSS_HASH'"
 ```
 
-### Find glosses by same character
+### Find passages by same character
 ```bash
-sqlite3 ~/utono/literature/gloss.db "SELECT source_text, gloss_text FROM glosses WHERE character = '<character>' AND hash != '\$GLOSS_HASH' LIMIT 5"
+sqlite3 ~/utono/literature/gloss.db \
+  "SELECT p.source_text, g.gloss_text FROM passages p
+   LEFT JOIN glosses g ON g.passage_id = p.id
+   WHERE p.character = '<character>'
+   AND p.hash != '\$GLOSS_HASH' LIMIT 5"
 ```
 
-### Find glosses in same scene
+### Find passages in same scene
 ```bash
-sqlite3 ~/utono/literature/gloss.db "SELECT source_text, gloss_text FROM glosses WHERE act = '<act>' AND scene = '<scene>' AND hash != '\$GLOSS_HASH' LIMIT 5"
+sqlite3 ~/utono/literature/gloss.db \
+  "SELECT p.source_text, g.gloss_text FROM passages p
+   LEFT JOIN glosses g ON g.passage_id = p.id
+   WHERE p.act = '<act>' AND p.scene = '<scene>'
+   AND p.hash != '\$GLOSS_HASH' LIMIT 5"
+```
+
+### Get line translations for a file
+```bash
+sqlite3 ~/utono/literature/gloss.db \
+  "SELECT line_number, original_text, translation
+   FROM line_translations
+   WHERE source_file = '<file>' ORDER BY line_number"
 ```
 
 ## Response Guidelines
@@ -296,85 +337,6 @@ exploration of power, identity, and authenticity.
 
 Use `/lookup <word>` if you want to check whether the user has glossed other passages containing this word.
 
-## Term Discovery During Explanation
-
-Your system prompt includes a CATALOGUED TERMS list showing terms already in
-the database. Check this list before proposing new terms.
-
-When explaining or discussing a passage, actively watch for words that carried
-special weight for Elizabethan audiences. After your explanation, flag these
-terms and offer next steps.
-
-**Pattern to follow:**
-
-1. Explain/discuss the passage as requested
-2. Identify resonant terms (words with period-specific significance)
-3. Check if the term is already in CATALOGUED TERMS
-   - If yes: mention it's catalogued, suggest `/lookup <term>`
-   - If no: propose adding it with `/add <term>`
-4. Offer to discuss the term's broader usage in Shakespeare
-
-**Example A - NEW term (user asks to explain Fluellen's "disciplines" speech):**
-
-```
-[Your explanation of the passage...]
-
----
-RESONANT TERM SPOTTED: "discipline"
-
-Fluellen's insistence on "the disciplines of the war" reflects
-Elizabethan military humanism - the belief that classical Roman
-methods (Vegetius, Caesar) defined proper warfare. For Fluellen,
-"discipline" isn't just order; it's the entire system of inherited
-military wisdom.
-
-→ Add to catalogue? Run: `/add discipline`
-→ Want the full picture? Ask: "discuss discipline"
-```
-
-**Example B - CATALOGUED term (Henry's "ceremony" speech):**
-
-When a passage prominently features a term that's already in CATALOGUED TERMS,
-flag it differently:
-
-```
-[Your explanation of the passage...]
-
----
-KEY TERM: "ceremony" (in your catalogue)
-
-Henry repeats "ceremony" four times, personifying it as an "idol"
-and interrogating its worth. This is one of Shakespeare's most
-sustained examinations of the word.
-
-→ See your notes: `/lookup ceremony`
-→ Want the full picture? Ask: "discuss ceremony"
-```
-
-**The distinction:**
-- NEW term → "RESONANT TERM SPOTTED" + offer `/add`
-- CATALOGUED term → "KEY TERM (in your catalogue)" + offer `/lookup`
-- Both → offer "discuss <term>" for cross-canon analysis
-
-**What makes a term worth flagging:**
-
-- Repeated emphasis by a character (Fluellen says "discipline" 5+ times)
-- Period-specific meaning differs from modern usage
-- Connects to Elizabethan debates (military theory, theology, politics)
-- Shakespeare uses it pointedly across multiple works
-- The word does thematic work beyond its surface meaning
-
-**Categories for proposals:**
-- Philosophical and Scientific Terms
-- Social and Political Terms
-- Theatre and Performance
-- Words of Extremity and Paradox
-- Words of Identity and Desire
-- Military and Martial Terms (for words like "discipline", "honour")
-
-**Keep the recommendation brief** - the user can ask for more with "discuss".
-Don't overload every response; flag 1-2 significant terms maximum.
-
 ## Keybind Documentation
 
 **ALWAYS update keybind documentation after any keybind changes:**
@@ -388,17 +350,14 @@ Don't overload every response; flag 1-2 significant terms maximum.
 | `/new` | Clear history and show context summary |
 | `/summarize` | Generate summary of conversation (optional) |
 | `/save` | Save the most recent reply to addenda table |
-| `/add <term>` | Add Elizabethan resonance term to catalogue |
-| `/remove <term>` | Remove term from catalogue |
-| `/term [word]` | List all terms, or get record for specific term |
-| `/lookup <word>` | Search database broadly (glosses, terms, addenda) |
+| `/lookup <word>` | Search database (passages, glosses, addenda) |
 | `/db` | Show all available context from database |
-| `/line-by-line` | Line-by-line close reading for actor rehearsal |
+| `/line-translations` | Generate line-by-line translations (no acting notes) |
 
 ## After /new or /clear
 
 The `/new` command clears conversation history and provides a context summary
-from the system prompt (passage, translation, terms, prior discussions).
+from the system prompt (passage, translation, prior discussions).
 No database queries needed - everything is already loaded.
 
 The built-in `/clear` command just clears history without the summary.
@@ -409,26 +368,20 @@ The user may not realize how the database can enrich your responses. When
 appropriate, gently suggest database features:
 
 **When to suggest `/lookup`:**
-- User asks about a word that might be in their Elizabethan terms collection
 - User wonders how a word was used elsewhere in their glossed passages
 - After explaining a term, mention: "Run `/lookup <word>` to see if you've
-  noted this term before"
+  glossed this word before"
 
 **When to suggest `/db`:**
 - At the start of a complex discussion
 - When the user seems unaware of prior discussions saved for this passage
 - If the user asks "what do I already know about this?"
 
-**When to suggest `/add`:**
-- After identifying a word with special Elizabethan resonance
-- When proposing a term (use PROPOSED TERM format, then suggest `/add`)
-- Remind user: "Use `/add <term>` to save this to your terms collection"
-
 **When to explain the database value:**
 - User seems to be asking the same questions repeatedly across sessions
 - User doesn't know their translation is available
-- Early in a session, briefly note: "Your prior discussions and term
-  definitions are in the database - use `/db` to see them"
+- Early in a session, briefly note: "Your prior discussions are in the
+  database - use `/db` to see them"
 
 **Keep suggestions brief and natural** - don't lecture. A simple "You might
-check `/lookup ceremony` to see your notes on that term" is sufficient.
+check `/lookup ceremony` to see related passages" is sufficient.

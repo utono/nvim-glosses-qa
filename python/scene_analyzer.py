@@ -22,18 +22,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-# Add xc/nvim/python to path for gloss module imports
-XC_PYTHON_DIR = Path.home() / "utono" / "xc" / "nvim" / "python"
-sys.path.insert(0, str(XC_PYTHON_DIR))
+import hashlib
 
-from hash_utils import generate_hash
-from gloss import (
-    GlossDatabase,
-    PromptBuilder,
-    create_backend,
-    preprocess_text,
-)
-from gloss.config import GLOSSES_DIR
+# Database and output paths
+DB_PATH = Path.home() / "utono" / "literature" / "gloss.db"
+GLOSSES_DIR = Path.home() / "utono" / "literature" / "glosses"
+
+
+def generate_hash(text: str) -> str:
+    """Generate MD5 hash for text with consistent normalization."""
+    normalized = text.strip().replace('\r\n', '\n')
+    return hashlib.md5(normalized.encode('utf-8')).hexdigest()
+
 
 # Scene analyzer log file
 LOG_DIR = Path.home() / "utono" / "nvim-glosses-qa" / "logs"
@@ -57,6 +57,221 @@ def setup_scene_logging() -> logging.Logger:
 
 
 logger = setup_scene_logging()
+
+
+# =============================================================================
+# GlossDatabase - writes to passages/glosses/addenda tables
+# =============================================================================
+
+class GlossDatabase:
+    """SQLite operations for gloss storage using normalized schema.
+
+    Schema:
+        passages: One row per unique source text (hash is unique key)
+        glosses: One row per gloss type per passage (FK to passages)
+        addenda: Multiple rows per passage for Q&A (FK to passages)
+    """
+
+    def __init__(self, db_path: Path = None):
+        self.db_path = db_path or DB_PATH
+
+    def setup(self) -> None:
+        """Create database schema if not exists."""
+        import sqlite3
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS passages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hash TEXT UNIQUE NOT NULL,
+            source_text TEXT NOT NULL,
+            source_file TEXT NOT NULL,
+            tag TEXT,
+            line_number INTEGER,
+            char_position INTEGER,
+            character TEXT,
+            act TEXT,
+            scene TEXT,
+            file_path TEXT,
+            file_hash TEXT,
+            last_modified TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            version INTEGER DEFAULT 1,
+            play_name TEXT
+        )
+        """)
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS glosses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            passage_id INTEGER NOT NULL REFERENCES passages(id) ON DELETE CASCADE,
+            gloss_type TEXT NOT NULL,
+            gloss_text TEXT NOT NULL,
+            gloss_file TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(passage_id, gloss_type)
+        )
+        """)
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS addenda (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            passage_id INTEGER NOT NULL REFERENCES passages(id) ON DELETE CASCADE,
+            question TEXT NOT NULL,
+            answer TEXT NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_passages_hash ON passages(hash)")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_glosses_passage_id ON glosses(passage_id)")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_glosses_type ON glosses(gloss_type)")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_addenda_passage_id ON addenda(passage_id)")
+
+        conn.commit()
+        conn.close()
+
+    def get_existing(self, text_hash: str, gloss_type: str) -> Optional[dict]:
+        """Check if a gloss exists for this hash and type."""
+        import sqlite3
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT g.gloss_text, g.gloss_file
+            FROM glosses g
+            JOIN passages p ON g.passage_id = p.id
+            WHERE p.hash = ? AND g.gloss_type = ?
+        """, (text_hash, gloss_type))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            return {'text': row[0], 'file': row[1]}
+        return None
+
+    def get_or_create_passage(self, text_hash: str, source_text: str,
+                               metadata: dict) -> int:
+        """Get existing passage ID or create new passage."""
+        import sqlite3
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+
+        # Check if passage exists
+        cursor.execute("SELECT id FROM passages WHERE hash = ?", (text_hash,))
+        row = cursor.fetchone()
+
+        if row:
+            conn.close()
+            return row[0]
+
+        # Create new passage
+        cursor.execute("""
+            INSERT INTO passages (hash, source_text, source_file, character,
+                                  act, scene, play_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            text_hash,
+            source_text,
+            metadata.get('source_file', ''),
+            metadata.get('character'),
+            metadata.get('act'),
+            metadata.get('scene'),
+            metadata.get('play_name')
+        ))
+
+        passage_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return passage_id
+
+    def save(self, text_hash: str, source_text: str, gloss_text: str,
+             gloss_file: str, gloss_type: str, metadata: dict) -> None:
+        """Save or update a gloss."""
+        import sqlite3
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+
+        # Get or create passage
+        passage_id = self.get_or_create_passage(text_hash, source_text, metadata)
+
+        # Upsert gloss
+        cursor.execute("""
+            INSERT INTO glosses (passage_id, gloss_type, gloss_text, gloss_file)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(passage_id, gloss_type) DO UPDATE SET
+                gloss_text = excluded.gloss_text,
+                gloss_file = excluded.gloss_file,
+                timestamp = CURRENT_TIMESTAMP
+        """, (passage_id, gloss_type, gloss_text, gloss_file))
+
+        conn.commit()
+        conn.close()
+
+    def save_addendum(self, text_hash: str, question: str, answer: str) -> None:
+        """Save a Q&A addendum for a passage."""
+        import sqlite3
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+
+        # Get passage ID
+        cursor.execute("SELECT id FROM passages WHERE hash = ?", (text_hash,))
+        row = cursor.fetchone()
+
+        if not row:
+            conn.close()
+            logger.warning(f"Cannot save addendum: passage {text_hash[:8]} not found")
+            return
+
+        passage_id = row[0]
+
+        cursor.execute("""
+            INSERT INTO addenda (passage_id, question, answer)
+            VALUES (?, ?, ?)
+        """, (passage_id, question, answer))
+
+        conn.commit()
+        conn.close()
+
+
+# =============================================================================
+# Stub functions for removed gloss module imports
+# =============================================================================
+
+def create_backend(backend_type: str):
+    """Stub for removed gloss module backend.
+
+    The --save-chunk and --export-chunks modes don't use the backend.
+    This stub allows the code to initialize but will fail if actually called.
+    """
+    class StubBackend:
+        def generate(self, prompt: str) -> str:
+            raise NotImplementedError(
+                "API backend removed. Use --export-chunks and --save-chunk modes "
+                "with Claude Code instead."
+            )
+    return StubBackend()
+
+
+class PromptBuilder:
+    """Stub for removed gloss module PromptBuilder.
+
+    Only used in API mode which is no longer supported.
+    """
+    def __init__(self, text: str):
+        self.text = text
+
+    def build(self, style: str = None) -> str:
+        raise NotImplementedError(
+            "PromptBuilder removed. Use --export-chunks and --save-chunk modes "
+            "with Claude Code instead."
+        )
 
 
 # Structured error codes for Claude Code intervention
@@ -96,6 +311,164 @@ def print_structured_error(
     if action:
         print(f"  Action: {action}", file=sys.stderr)
     print("", file=sys.stderr)
+
+
+def parse_line_translations(generated_output: str) -> list[tuple[str, str, str]]:
+    """Parse generated translation output to extract line-level mappings.
+
+    Input format (from Claude /line-by-line command):
+        VIOLA.
+
+        **"What country friends is this?"**
+
+        What land is this, my friends?
+
+        **"This is Illyria lady."**
+
+        This is Illyria, my lady.
+
+        CAPTAIN.
+
+        **"A noble duke in nature"**
+
+        A duke noble in character.
+
+    Returns:
+        List of (original_text, translation, character) tuples.
+        Character is the most recent speaker heading seen.
+    """
+    results = []
+    current_character = None
+
+    # Pattern for speaker heading: ALL CAPS followed by period on its own line
+    speaker_pattern = re.compile(r'^([A-Z][A-Z\s]+)\.\s*$')
+
+    # Pattern for original line: **"text"**
+    original_pattern = re.compile(r'^\*\*"([^"]+)"\*\*\s*$')
+
+    lines = generated_output.split('\n')
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+
+        # Check for speaker heading
+        speaker_match = speaker_pattern.match(line)
+        if speaker_match:
+            current_character = speaker_match.group(1).strip()
+            i += 1
+            continue
+
+        # Check for original line
+        original_match = original_pattern.match(line)
+        if original_match:
+            original_text = original_match.group(1)
+
+            # Look for translation in subsequent non-empty lines
+            # Skip blank lines, then take the next non-bold line as translation
+            translation = None
+            j = i + 1
+            while j < len(lines):
+                next_line = lines[j].strip()
+                # Skip empty lines
+                if not next_line:
+                    j += 1
+                    continue
+                # Stop if we hit another **"..."** or speaker heading
+                if original_pattern.match(next_line) or speaker_pattern.match(next_line):
+                    break
+                # This is the translation
+                translation = next_line
+                break
+
+            if translation:
+                results.append((original_text, translation, current_character))
+
+        i += 1
+
+    return results
+
+
+def save_line_translations(
+    translations: list[tuple[str, str, str]],
+    source_file: str,
+    chunk_text: str,
+    play_name: str,
+    act: str,
+    scene: str,
+    chunk_hash: str,
+    play_file_lines: list[str],
+    chunk_start_line: int
+) -> int:
+    """Save line-level translations to the database.
+
+    Args:
+        translations: List of (original_text, translation, character) tuples
+        source_file: Path to the play file (for matching)
+        chunk_text: The original chunk text (for line number mapping)
+        play_name: Name of the play
+        act: Act number as string
+        scene: Scene number as string
+        chunk_hash: Hash of the chunk for reference
+        play_file_lines: All lines from the play file (for line number lookup)
+        chunk_start_line: Starting line number of chunk in source file
+
+    Returns:
+        Number of translations saved.
+    """
+    import sqlite3
+
+    if not translations:
+        return 0
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    saved = 0
+
+    # Build a map of original text to line numbers in the source file
+    # We search within a reasonable range around the chunk start
+    search_start = max(0, chunk_start_line - 10)
+    search_end = min(len(play_file_lines), chunk_start_line + 500)
+
+    for original_text, translation, character in translations:
+        # Find the line number in the source file
+        line_number = None
+        original_stripped = original_text.strip()
+
+        for i in range(search_start, search_end):
+            file_line = play_file_lines[i].strip()
+            # Match if the line contains the original text
+            if original_stripped in file_line or file_line == original_stripped:
+                line_number = i + 1  # 1-indexed
+                break
+
+        if line_number is None:
+            logger.debug(f"Could not find line number for: {original_text[:50]}...")
+            continue
+
+        try:
+            cursor.execute("""
+                INSERT OR REPLACE INTO line_translations
+                (source_file, line_number, original_text, translation,
+                 character, play_name, act, scene, chunk_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                source_file,
+                line_number,
+                original_text,
+                translation,
+                character,
+                play_name,
+                act,
+                scene,
+                chunk_hash
+            ))
+            saved += 1
+        except sqlite3.Error as e:
+            logger.warning(f"Failed to save line translation: {e}")
+
+    conn.commit()
+    conn.close()
+    return saved
 
 
 @dataclass
@@ -1573,6 +1946,11 @@ Examples:
         help='For minimally-marked First Folio texts, infer scene boundaries '
              'from Exeunt/Enter patterns instead of explicit markers'
     )
+    parser.add_argument(
+        '--line-translations-only',
+        action='store_true',
+        help='Only save to line_translations table (skip passages/glosses/addenda)'
+    )
 
     args = parser.parse_args()
 
@@ -1726,20 +2104,41 @@ Examples:
             chunk_text = target_chunk_info['text']
             gloss_type = args.gloss_type
 
-            analyzer.db.get_or_create_passage(chunk_hash, chunk_text, metadata)
+            if args.line_translations_only:
+                # Only save to line_translations table
+                translations = parse_line_translations(analysis)
+                if translations:
+                    chunk_start_line = chunk_data.get('start_line', 0)
+                    line_count = save_line_translations(
+                        translations=translations,
+                        source_file=str(args.play_file),
+                        chunk_text=chunk_text,
+                        play_name=analyzer.play_name,
+                        act=str(act),
+                        scene=str(scene),
+                        chunk_hash=chunk_hash,
+                        play_file_lines=analyzer.parser.lines,
+                        chunk_start_line=chunk_start_line
+                    )
+                    print(f"Saved {line_count} line translations")
+                else:
+                    print("No translations parsed from output")
+            else:
+                # Save to passages/glosses/addenda
+                analyzer.db.get_or_create_passage(chunk_hash, chunk_text, metadata)
 
-            filename = f"{chunk_hash[:8]}_chunk_{gloss_type}.md"
-            analyzer.db.save(
-                chunk_hash, chunk_text, analysis, filename,
-                gloss_type, metadata
-            )
+                filename = f"{chunk_hash[:8]}_chunk_{gloss_type}.md"
+                analyzer.db.save(
+                    chunk_hash, chunk_text, analysis, filename,
+                    gloss_type, metadata
+                )
 
-            # Format addendum question based on gloss type
-            addendum_label = {
-                'line-by-line': 'Line-by-line analysis',
-                'sounds': 'Sound-pattern analysis',
-            }.get(gloss_type, f'{gloss_type} analysis')
-            analyzer.db.save_addendum(chunk_hash, addendum_label, analysis)
+                # Format addendum question based on gloss type
+                addendum_label = {
+                    'line-by-line': 'Line-by-line analysis',
+                    'sounds': 'Sound-pattern analysis',
+                }.get(gloss_type, f'{gloss_type} analysis')
+                analyzer.db.save_addendum(chunk_hash, addendum_label, analysis)
 
             print(f"Saved chunk {chunk_hash[:8]} ({target_chunk_info['speaker_summary']})")
             sys.exit(0)

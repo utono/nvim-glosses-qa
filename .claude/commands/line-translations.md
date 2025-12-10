@@ -1,20 +1,21 @@
-Generate line-by-line translations for a play scene. Translation only — no
-dramaturgical discussion, operative words, or acting notes.
+Generate line-by-line translations.
+For a play or a scene, generate translations only - no dramaturgical
+discussion, operative words, or acting notes.
 
 **Arguments: $ARGUMENTS**
 
 ## Argument Formats
 
 ```
-/line-by-line <play-file-path> "Act N, Scene M"
-/line-by-line <play-name> "Act N, Scene M"
+/line-translations <play-file-path> "Act N, Scene M"
+/line-translations <play-name> "Act N, Scene M"
 ```
 
 Examples:
 ```
-/line-by-line ~/utono/literature/.../romeo_and_juliet_gut.txt "Act I, Scene I"
-/line-by-line twelfth-night "Act I, Scene V"
-/line-by-line hamlet "Act III, Scene I"
+/line-translations ~/utono/literature/.../romeo_and_juliet_gut.txt "Act I, Scene I"
+/line-translations twelfth-night "Act I, Scene V"
+/line-translations hamlet "Act III, Scene I"
 ```
 
 ## How This Works
@@ -24,8 +25,11 @@ session** — no external API calls are made. The workflow:
 
 1. Run `scene_analyzer.py --export-chunks` to get chunk data as JSON
 2. For each non-cached chunk: generate translation, then save with
-   `--save-chunk`
-3. Run `scene_analyzer.py --build-from-cache` to build the markdown file
+   `--save-chunk --line-translations-only`
+3. Report results
+
+**Note:** This command saves ONLY to the `line_translations` table. It does
+NOT write to the glosses table and does NOT generate markdown output.
 
 ## Steps to Execute
 
@@ -54,7 +58,6 @@ python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
 
 This outputs JSON with:
 - `play_name`, `act`, `scene`, `scene_header`
-- `output_dir`, `output_filename`
 - `chunks[]` - each with `text`, `hash`, `cached`, `cached_text`
 
 ### Step 3: Process each chunk
@@ -148,44 +151,32 @@ After generating translation for a chunk, save it using `--save-chunk`:
 
 ```bash
 cat << 'CHUNK_EOF' | python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
-    "<play-file>" "<act/scene-spec>" --merge 42 --save-chunk <CHUNK_HASH>
+    "<play-file>" "<act/scene-spec>" --merge 42 --save-chunk <CHUNK_HASH> \
+    --line-translations-only
 <TRANSLATION_TEXT>
 CHUNK_EOF
 ```
 
 The script reads the translation from stdin and saves it to the database.
+The `--line-translations-only` flag saves ONLY to `line_translations` table
+(skips passages/glosses/addenda).
 
 **Workflow per chunk:**
 1. Generate translation for chunk
 2. Pipe translation to `--save-chunk` with the chunk's hash
-3. Verify "Saved chunk XXXXXXXX" output
+3. Verify "Saved N line translations" output
 4. Proceed to next chunk
 
-### Step 5: Build markdown from cache
-
-After ALL chunks are saved, build the markdown file:
-
-```bash
-python ~/utono/nvim-glosses-qa/python/scene_analyzer.py \
-    "<play-file>" "<act/scene-spec>" --merge 42 --build-from-cache
-```
-
-This verifies all chunks are cached and builds the output markdown.
-
-### Step 6: Report results
+### Step 5: Report results
 
 After completion:
 - Report number of chunks processed (cached vs new)
-- Show output file path
+- Report total line translations saved
 - Note any errors
 
 ## Database Location
 
 `~/utono/literature/gloss.db`
-
-## Output Location
-
-`~/utono/literature/glosses/<play-name>/act<N>_scene<M>_line-by-line.md`
 
 ## Command Reference
 
@@ -193,7 +184,7 @@ After completion:
 |------|---------|
 | `--export-chunks` | Export chunk data as JSON (no API calls) |
 | `--save-chunk HASH` | Save translation for chunk (reads from stdin) |
-| `--build-from-cache` | Build markdown from all cached chunks |
+| `--line-translations-only` | Only save to line_translations (skip glosses) |
 | `--dry-run` | Preview chunks without processing |
 | `--status` | Show cache status only |
 | `--merge N` | Merge speeches into N-line chunks |
@@ -202,12 +193,12 @@ After completion:
 
 ```
 # Single scene by file path
-/line-by-line ~/utono/literature/.../romeo_and_juliet_gut.txt "Act I, Scene I"
+/line-translations ~/utono/literature/.../romeo_and_juliet_gut.txt "Act I, Scene I"
 
 # Single scene by play name
-/line-by-line hamlet "Act III, Scene I"
-/line-by-line henry-v "Act IV, Scene VII"
+/line-translations hamlet "Act III, Scene I"
+/line-translations henry-v "Act IV, Scene VII"
 
 # Check what would be processed
-/line-by-line twelfth-night "Act I, Scene V" --dry-run
+/line-translations twelfth-night "Act I, Scene V" --dry-run
 ```
