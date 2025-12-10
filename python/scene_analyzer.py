@@ -397,7 +397,8 @@ def save_line_translations(
     scene: str,
     chunk_hash: str,
     play_file_lines: list[str],
-    chunk_start_line: int
+    chunk_start_line: int,
+    scene_end_line: int = None
 ) -> int:
     """Save line-level translations to the database.
 
@@ -411,6 +412,7 @@ def save_line_translations(
         chunk_hash: Hash of the chunk for reference
         play_file_lines: All lines from the play file (for line number lookup)
         chunk_start_line: Starting line number of chunk in source file
+        scene_end_line: Ending line number of the scene (optional, improves matching)
 
     Returns:
         Number of translations saved.
@@ -425,9 +427,12 @@ def save_line_translations(
     saved = 0
 
     # Build a map of original text to line numbers in the source file
-    # We search within a reasonable range around the chunk start
+    # Search from scene start to scene end (or fallback to start + 500)
     search_start = max(0, chunk_start_line - 10)
-    search_end = min(len(play_file_lines), chunk_start_line + 500)
+    if scene_end_line is not None:
+        search_end = min(len(play_file_lines), scene_end_line + 10)
+    else:
+        search_end = min(len(play_file_lines), chunk_start_line + 500)
 
     for original_text, translation, character in translations:
         # Find the line number in the source file
@@ -2109,6 +2114,7 @@ Examples:
                 translations = parse_line_translations(analysis)
                 if translations:
                     chunk_start_line = chunk_data.get('start_line', 0)
+                    scene_end_line = chunk_data.get('end_line')
                     line_count = save_line_translations(
                         translations=translations,
                         source_file=str(args.play_file),
@@ -2118,7 +2124,8 @@ Examples:
                         scene=str(scene),
                         chunk_hash=chunk_hash,
                         play_file_lines=analyzer.parser.lines,
-                        chunk_start_line=chunk_start_line
+                        chunk_start_line=chunk_start_line,
+                        scene_end_line=scene_end_line
                     )
                     print(f"Saved {line_count} line translations")
                 else:

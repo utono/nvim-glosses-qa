@@ -4,18 +4,17 @@ discussion, operative words, or acting notes.
 
 **Arguments: $ARGUMENTS**
 
-## Argument Formats
+## Argument Format
 
 ```
-/line-translations <play-file-path> "Act N, Scene M"
-/line-translations <play-name> "Act N, Scene M"
+/line-translations <play-file.txt> "Act N, Scene M"
 ```
 
 Examples:
 ```
-/line-translations ~/utono/literature/.../romeo_and_juliet_gut.txt "Act I, Scene I"
-/line-translations twelfth-night "Act I, Scene V"
-/line-translations hamlet "Act III, Scene I"
+/line-translations ~/utono/literature/shakespeare-william/gutenberg/romeo_and_juliet_gut.txt "Act I, Scene I"
+/line-translations ~/utono/literature/shakespeare-william/gutenberg/twelfth_night_gut.txt "Act I, Scene V"
+/line-translations ~/utono/literature/shakespeare-william/gutenberg/hamlet_gut.txt "Act III, Scene I"
 ```
 
 ## How This Works
@@ -35,17 +34,10 @@ NOT write to the glosses table and does NOT generate markdown output.
 
 ### Step 1: Parse arguments
 
-Extract play file and act/scene from arguments.
+Extract play file path and act/scene from arguments.
 
-**Format detection:**
-- Contains `/` or ends with `.txt` → direct file path
-- Otherwise → play name (find file from gloss script)
-
-**For play name format**, extract PLAY_FILE from the gloss script:
-```bash
-SCRIPT=~/utono/nvim-glosses-qa/scripts/gloss-play_<play-name>.sh
-rg "^PLAY_FILE=" "$SCRIPT" | cut -d'=' -f2 | tr -d '"'
-```
+The first argument must be a path to a `.txt` play file.
+The second argument is the act/scene spec (e.g., "Act I, Scene V").
 
 ### Step 2: Export chunks
 
@@ -120,6 +112,34 @@ Except ceremony — nothing but public ritual and display.
 - Do NOT offer follow-up questions
 - Begin IMMEDIATELY with the first line in bold
 
+**CRITICAL - Physical Line Boundaries:**
+Quote each PHYSICAL LINE from the source exactly as written, even when
+sentences enjamb (continue across line breaks). Never combine lines.
+Never truncate a line at punctuation.
+
+**WRONG** (combining enjambed lines):
+```
+**"my lips so wide as a bristle may enter in way of thy excuse:"**
+
+my lips even wide enough to let a bristle through, to make excuses.
+```
+
+**CORRECT** (respecting physical line breaks):
+```
+**"my lips so wide as a bristle may enter in way of thy excuse: my"**
+
+my lips even wide enough to let a bristle through, to make
+
+**"lady will hang thee for thy absence."**
+
+excuses. My lady will hang you for being away so long.
+```
+
+Notice:
+- Line 1 ends with "my" (mid-sentence) — quote it exactly
+- Line 2 completes the sentence — quote it as a separate line
+- The translation can flow naturally across the two entries
+
 **LINE WIDTH:** Wrap all prose at 65 characters maximum. This ensures
 proper display in the terminal viewer. Break lines at natural phrase
 boundaries — never mid-word, rarely mid-phrase.
@@ -192,13 +212,8 @@ After completion:
 ## Examples
 
 ```
-# Single scene by file path
-/line-translations ~/utono/literature/.../romeo_and_juliet_gut.txt "Act I, Scene I"
-
-# Single scene by play name
-/line-translations hamlet "Act III, Scene I"
-/line-translations henry-v "Act IV, Scene VII"
-
-# Check what would be processed
-/line-translations twelfth-night "Act I, Scene V" --dry-run
+# Single scene
+/line-translations ~/utono/literature/shakespeare-william/gutenberg/romeo_and_juliet_gut.txt "Act I, Scene I"
+/line-translations ~/utono/literature/shakespeare-william/gutenberg/hamlet_gut.txt "Act III, Scene I"
+/line-translations ~/utono/literature/shakespeare-william/gutenberg/henry_v_gut.txt "Act IV, Scene VII"
 ```
