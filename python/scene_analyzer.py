@@ -476,6 +476,99 @@ def save_line_translations(
     return saved
 
 
+def validate_line_translations(source_file: str, fix: bool = False) -> list[dict]:
+    """Validate DB line_translations against actual source file content.
+
+    Compares stored original_text with actual file lines at the same line numbers.
+    Reports mismatches (orphaned entries) and optionally deletes them.
+
+    Args:
+        source_file: Absolute path to the play file to validate
+        fix: If True, delete orphaned entries from database
+
+    Returns:
+        List of mismatch dictionaries with keys: id, line_number, db_text, file_text
+    """
+    import sqlite3
+
+    # Load source file lines
+    try:
+        with open(source_file, 'r', encoding='utf-8') as f:
+            file_lines = f.readlines()
+    except FileNotFoundError:
+        print(f"Error: Source file not found: {source_file}", file=sys.stderr)
+        return []
+
+    # Query all translations for this source file
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, line_number, original_text
+        FROM line_translations
+        WHERE source_file = ?
+        ORDER BY line_number
+    """, (source_file,))
+    rows = cursor.fetchall()
+
+    if not rows:
+        print(f"No translations found for: {source_file}")
+        conn.close()
+        return []
+
+    print(f"Validating: {source_file}")
+    print(f"Checking {len(rows)} translations...\n")
+
+    mismatches = []
+    for row_id, line_number, db_text in rows:
+        # Check if line number is within file range (line_number is 1-indexed)
+        if line_number < 1 or line_number > len(file_lines):
+            mismatches.append({
+                'id': row_id,
+                'line_number': line_number,
+                'db_text': db_text,
+                'file_text': '<LINE OUT OF RANGE>'
+            })
+            continue
+
+        # Get actual file content at that line (convert to 0-indexed)
+        file_text = file_lines[line_number - 1].strip()
+        db_text_stripped = db_text.strip()
+
+        # Match using same logic as save_line_translations:
+        # DB text should be contained in file text, or exact match
+        if db_text_stripped not in file_text and file_text != db_text_stripped:
+            mismatches.append({
+                'id': row_id,
+                'line_number': line_number,
+                'db_text': db_text,
+                'file_text': file_text
+            })
+
+    # Report mismatches
+    for m in mismatches:
+        print(f"MISMATCH at line {m['line_number']}:")
+        print(f"  DB:   \"{m['db_text']}\"")
+        print(f"  File: \"{m['file_text']}\"")
+        print()
+
+    if mismatches:
+        print(f"Found {len(mismatches)} orphaned translation(s).")
+        if fix:
+            # Delete orphaned entries
+            orphan_ids = [m['id'] for m in mismatches]
+            placeholders = ','.join('?' * len(orphan_ids))
+            cursor.execute(f"DELETE FROM line_translations WHERE id IN ({placeholders})", orphan_ids)
+            conn.commit()
+            print(f"Deleted {len(mismatches)} orphaned translation(s).")
+        else:
+            print("\nRun with --fix to delete orphaned entries.")
+    else:
+        print("All translations match source file.")
+
+    conn.close()
+    return mismatches
+
+
 @dataclass
 class Speech:
     """A single character's continuous speech."""
@@ -1879,8 +1972,8 @@ Examples:
     )
     parser.add_argument(
         'act_scene',
-        nargs='+',
-        help='Act and scene: either "Act IV, Scene VII" or two numbers: 4 7'
+        nargs='*',
+        help='Act and scene: either "Act IV, Scene VII" or two numbers: 4 7 (not required for --validate-translations)'
     )
     parser.add_argument(
         '--output-dir', '-o',
@@ -1956,11 +2049,33 @@ Examples:
         action='store_true',
         help='Only save to line_translations table (skip passages/glosses/addenda)'
     )
+    parser.add_argument(
+        '--validate-translations',
+        action='store_true',
+        help='Check if DB translations match source file content'
+    )
+    parser.add_argument(
+        '--fix',
+        action='store_true',
+        help='Delete orphaned translations (use with --validate-translations)'
+    )
 
     args = parser.parse_args()
 
+    # Validate translations mode: check DB entries against source file
+    if args.validate_translations:
+        source_file = str(args.play_file.resolve())
+        if not args.play_file.exists():
+            print(f"Error: Source file not found: {source_file}", file=sys.stderr)
+            sys.exit(1)
+        mismatches = validate_line_translations(source_file, fix=args.fix)
+        sys.exit(1 if mismatches else 0)
+
     # Parse act/scene from arguments
     act_scene_args = args.act_scene
+    if not act_scene_args:
+        print("Error: act_scene argument is required for this mode", file=sys.stderr)
+        sys.exit(1)
     if len(act_scene_args) == 1:
         # Single argument: "Act IV, Scene VII" format
         try:
