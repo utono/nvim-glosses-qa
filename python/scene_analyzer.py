@@ -905,9 +905,14 @@ class PlayParser:
         """Scan play text to find speaker patterns.
 
         Detects both ALL CAPS (Henry V) and Title Case (Romeo and Juliet).
+        Also handles formats without trailing periods (e.g., Gutenberg texts).
         """
-        # Pattern for ALL CAPS speaker (e.g., "SAMPSON.")
-        all_caps_pattern = re.compile(r'^([A-Z][A-Z\s]+)\.\s*$')
+        # Pattern for ALL CAPS speaker with period (e.g., "SAMPSON.")
+        all_caps_with_period = re.compile(r'^([A-Z][A-Z\s]+)\.\s*$')
+
+        # Pattern for ALL CAPS speaker without period (e.g., "THESEUS")
+        # Must be alone on a line, 2+ chars, no lowercase
+        all_caps_no_period = re.compile(r'^([A-Z][A-Z\s]{1,25})$')
 
         # Pattern for Title Case speaker (e.g., "Sampson.", "Lady Capulet.")
         # Matches: Capital letter + lowercase, optionally followed by more
@@ -916,18 +921,35 @@ class PlayParser:
             r'^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\.\s*$'
         )
 
-        for line in self.lines:
+        for i, line in enumerate(self.lines):
             stripped = line.strip()
-            if len(stripped) > 30:
+            if len(stripped) > 30 or len(stripped) < 2:
                 continue
 
-            # Try ALL CAPS first
-            match = all_caps_pattern.match(stripped)
+            # Try ALL CAPS with period first
+            match = all_caps_with_period.match(stripped)
             if match:
                 name = match.group(1).strip()
                 # Skip ACT/SCENE markers
                 if not (name.startswith('ACT') or name.startswith('SCENE')):
                     self.character_names.add(name)
+                continue
+
+            # Try ALL CAPS without period (check next line has content)
+            match = all_caps_no_period.match(stripped)
+            if match:
+                name = match.group(1).strip()
+                # Skip ACT/SCENE markers and stage directions
+                if (name.startswith('ACT') or name.startswith('SCENE') or
+                        name.startswith('ENTER') or name.startswith('EXIT') or
+                        name.startswith('EXEUNT')):
+                    continue
+                # Verify next non-empty line is dialogue (not stage direction)
+                if i + 1 < len(self.lines):
+                    next_line = self.lines[i + 1].strip()
+                    # If next line is not empty and not a stage direction
+                    if next_line and not next_line.startswith('['):
+                        self.character_names.add(name)
                 continue
 
             # Try Title Case
@@ -951,21 +973,28 @@ class PlayParser:
         Returns:
             The speaker name if this is a speaker line, None otherwise.
         """
-        # Must end with period and be reasonably short
-        if not line.endswith('.') or len(line) > 30:
+        # Must be reasonably short
+        if len(line) > 30 or len(line) < 2:
             return None
 
-        # Extract potential speaker name (without trailing period)
-        potential_name = line[:-1].strip()
+        # Handle lines with trailing period
+        if line.endswith('.'):
+            potential_name = line[:-1].strip()
+        else:
+            # Handle ALL CAPS without period (e.g., "THESEUS")
+            # Must be all uppercase letters and spaces
+            if not re.match(r'^[A-Z][A-Z\s]+$', line):
+                return None
+            potential_name = line
 
-        # Skip ACT/SCENE markers
-        if potential_name.upper().startswith(('ACT', 'SCENE')):
+        # Skip ACT/SCENE markers and stage directions
+        upper_name = potential_name.upper()
+        if upper_name.startswith(('ACT', 'SCENE', 'ENTER', 'EXIT', 'EXEUNT')):
             return None
 
         # Check against known character names (case-insensitive)
-        potential_upper = potential_name.upper()
-        if potential_upper in self.character_names:
-            return potential_upper
+        if upper_name in self.character_names:
+            return upper_name
 
         # Also check if it matches the pattern of known multi-word names
         # e.g., "Lady Montague" should match if "LADY MONTAGUE" is known
